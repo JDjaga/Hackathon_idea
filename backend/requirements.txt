@@ -12,7 +12,7 @@ pydantic>=2.5.0
 ultralytics>=8.0.0
 opencv-python>=4.8.0
 
-# API Server (Track B)
+# API Server (Track B — Green Light backend)
 fastapi>=0.100.0
 uvicorn>=0.20.0
 python-multipart>=0.0.5
