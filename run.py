@@ -1,6 +1,6 @@
 """
-AI Product Guardian — Master Entrypoint Launcher
-Boots the FastAPI backend server, serves the interactive Web Dashboard,
+HomeMind — Master Entrypoint Launcher
+Boots the FastAPI backend server, serves the Household Intelligence Dashboard,
 and provides an optional interactive CLI mode.
 
 Usage:
@@ -29,7 +29,7 @@ def open_browser_delayed(url: str, delay: float = 1.2):
     """Open default browser after server initializes."""
     def _open():
         time.sleep(delay)
-        print(f"\n[AI Product Guardian] Opening Web Dashboard: {url}")
+        print(f"\n[HomeMind] Opening Household Dashboard: {url}")
         webbrowser.open(url)
     threading.Thread(target=_open, daemon=True).start()
 
@@ -46,7 +46,7 @@ def run_cli_menu():
 
     while True:
         print("\n" + "=" * 65)
-        print("  AI PRODUCT GUARDIAN — INTERACTIVE CLI")
+        print("  HOMEMIND — HOUSEHOLD INTELLIGENCE CLI")
         print("=" * 65)
         print("1. Extract Digital Passport from Sample Warranty Card")
         print("2. Run YOLO Appliance Detection on Sample Photo")
@@ -108,7 +108,7 @@ def run_cli_menu():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AI Product Guardian Master Runner")
+    parser = argparse.ArgumentParser(description="HomeMind — Household Intelligence")
     parser.add_argument("--cli", action="store_true", help="Launch interactive CLI menu")
     parser.add_argument("--host", type=str, default=SERVER_HOST, help="Host address (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=SERVER_PORT, help="Port (default: 8000)")
@@ -122,7 +122,7 @@ def main():
     import uvicorn
     url = f"http://localhost:{args.port}"
     print("\n" + "=" * 70)
-    print("  AI PRODUCT GUARDIAN — MASTER APPLICATION SERVER")
+    print("  HOMEMIND — HOUSEHOLD INTELLIGENCE SERVER")
     print("=" * 70)
     print(f"  Web Dashboard:  {url}")
     print(f"  Swagger Docs:   {url}/docs")

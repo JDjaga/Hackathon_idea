@@ -252,7 +252,7 @@ class PassportStore:
             }
 
     def seed_demo_passports(self) -> None:
-        """Seed high-fidelity demo passports if store is completely empty."""
+        """Seed high-fidelity HomeMind demo products if store is completely empty."""
         with self._lock:
             self._sync()
             if self.passports:
@@ -268,13 +268,23 @@ class PassportStore:
                     "serial_number": "LG123456789",
                     "purchase_price": 28500.0,
                     "currency": "INR",
-                    "purchase_date": "2026-08-12",
+                    "purchase_date": "2026-01-14",
                     "warranty": "2-YEAR",
                     "seller": "Best Electrical Store",
                     "category": "Large Domestic Appliances",
                     "customer_name": "Rohan Sharma",
                     "invoice_number": "INV-2026-9042",
+                    "room": "Utility",
                     "created_at": "2026-08-15T12:00:00",
+                    "linked_documents": [
+                        {"type": "warranty_card", "source": "camera_scan", "extracted_at": "2026-08-15T12:00:00", "snippet": "LG Warranty Certificate - 2 Year Comprehensive"},
+                        {"type": "invoice", "source": "camera_scan", "extracted_at": "2026-08-15T12:05:00", "snippet": "Tax Invoice INV-2026-9042 Best Electrical Store"}
+                    ],
+                    "events": [
+                        {"type": "purchase", "date": "2026-01-14", "description": "Purchased from Best Electrical Store"},
+                        {"type": "installation", "date": "2026-01-18", "description": "Professional installation completed"},
+                        {"type": "service", "date": "2026-07-15", "description": "Routine maintenance — drum cleaning and filter check"}
+                    ],
                     "identity_match": {
                         "status": "new_product",
                         "matched_passport_id": None,
@@ -287,18 +297,62 @@ class PassportStore:
                     "passport_id": "PP-20260820153000-2",
                     "document_type": "tax_invoice",
                     "product": "Air Purifier",
-                    "brand": "Electrolux",
-                    "model": "EAP150",
-                    "serial_number": "SN89234710",
-                    "purchase_price": 198.0,
-                    "currency": "RM",
-                    "purchase_date": "2026-07-24",
-                    "warranty": "1-YEAR",
-                    "seller": "Mega Home Electronics",
+                    "brand": "Philips",
+                    "model": "AC3059-65",
+                    "serial_number": "PH89234710",
+                    "purchase_price": 22990.0,
+                    "currency": "INR",
+                    "purchase_date": "2026-06-10",
+                    "warranty": "2-YEAR",
+                    "seller": "Croma Electronics",
                     "category": "Small Domestic Appliances",
-                    "customer_name": "Alice Tan",
-                    "invoice_number": "TX-88219",
+                    "customer_name": "Rohan Sharma",
+                    "invoice_number": "CR-INV-88219",
+                    "room": "Bedroom",
                     "created_at": "2026-08-20T15:30:00",
+                    "linked_documents": [
+                        {"type": "invoice", "source": "camera_scan", "extracted_at": "2026-08-20T15:30:00", "snippet": "Croma Tax Invoice CR-INV-88219 Philips Air Purifier"}
+                    ],
+                    "events": [
+                        {"type": "purchase", "date": "2026-06-10", "description": "Purchased from Croma Electronics"},
+                        {"type": "consumable", "date": "2026-09-10", "description": "HEPA filter replacement due (every 90 days)"}
+                    ],
+                    "identity_match": {
+                        "status": "new_product",
+                        "matched_passport_id": None,
+                        "match_confidence": None,
+                        "matched_fields": [],
+                        "conflicting_fields": []
+                    }
+                },
+                {
+                    "passport_id": "PP-20260901100000-3",
+                    "document_type": "warranty_card",
+                    "product": "Air Conditioner",
+                    "brand": "Daikin",
+                    "model": "FTKF35UV16V",
+                    "serial_number": "DK-2026-77541",
+                    "purchase_price": 38500.0,
+                    "currency": "INR",
+                    "purchase_date": "2025-10-22",
+                    "warranty": "1-YEAR",
+                    "seller": "Cool Comfort Appliances",
+                    "category": "HVAC",
+                    "customer_name": "Rohan Sharma",
+                    "invoice_number": "CC-7821",
+                    "room": "Living Room",
+                    "created_at": "2026-09-01T10:00:00",
+                    "linked_documents": [
+                        {"type": "warranty_card", "source": "camera_scan", "extracted_at": "2026-09-01T10:00:00", "snippet": "Daikin 1 Year Warranty FTKF35UV16V"},
+                        {"type": "invoice", "source": "camera_scan", "extracted_at": "2026-09-01T10:02:00", "snippet": "Cool Comfort Appliances Tax Invoice CC-7821"},
+                        {"type": "manual", "source": "upload", "extracted_at": "2026-09-01T10:05:00", "snippet": "Daikin Installation & Operation Manual"}
+                    ],
+                    "events": [
+                        {"type": "purchase", "date": "2025-10-22", "description": "Purchased from Cool Comfort Appliances"},
+                        {"type": "installation", "date": "2025-10-25", "description": "Professional installation with copper piping"},
+                        {"type": "service", "date": "2026-04-15", "description": "Gas recharge and coil cleaning"},
+                        {"type": "service", "date": "2026-07-20", "description": "Filter cleaning and performance check"}
+                    ],
                     "identity_match": {
                         "status": "new_product",
                         "matched_passport_id": None,
@@ -308,6 +362,13 @@ class PassportStore:
                     }
                 }
             ]
+
+            # Normalize each demo passport (auto-computes warranty expiry, health, maintenance)
+            from app.core.normalizers import normalize_passport
+            for d in demo_data:
+                normalized = normalize_passport(d)
+                d.update(normalized)
+
             self.passports.extend(demo_data)
             self.save()
 

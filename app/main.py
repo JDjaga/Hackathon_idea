@@ -1,6 +1,7 @@
 """
-AI Product Guardian — Master FastAPI Application
-Mounts all REST API routers, static assets, HTML templates, and serves the Web Dashboard.
+HomeMind — Master FastAPI Application
+Mounts all REST API routers, static assets, HTML templates, and serves the Household Intelligence Dashboard.
+"Your phone remembers everything you own."
 """
 
 import os
@@ -16,18 +17,22 @@ from app.config import (
     TEMPLATES_DIR,
     SERVER_HOST,
     SERVER_PORT,
-    YOLO_MODEL_PATH
+    YOLO_MODEL_PATH,
+    APP_NAME,
+    APP_TAGLINE,
+    APP_VERSION,
+    ROOMS
 )
-from app.api import dpp_router, matcher_router, detector_router, samples_router
+from app.api import dpp_router, matcher_router, detector_router, samples_router, household_router
 from app.core.dpp_extractor import check_ollama
-from app.core.ocr_engine import is_ocr_available
+from app.core.ocr_engine import is_ocr_available, get_ocr_engine_name
 from app.core.passport_store import get_passport_store
 
 # Initialize FastAPI Application
 app = FastAPI(
-    title="AI Product Guardian",
-    description="Digital Product Passport (DPP) & Product Identity Verification Engine",
-    version="2.0.0"
+    title=APP_NAME,
+    description=f"{APP_TAGLINE} — Household Intelligence & Digital Product Passport Engine",
+    version=APP_VERSION
 )
 
 # CORS configuration
@@ -51,13 +56,14 @@ app.include_router(dpp_router)
 app.include_router(matcher_router)
 app.include_router(detector_router)
 app.include_router(samples_router)
+app.include_router(household_router)
 
 store = get_passport_store()
 
 
 @app.get("/api/health")
 async def health_check():
-    """Diagnostic health check for Ollama, OCR, YOLO, and Passport Store."""
+    """Diagnostic health check for Ollama, OCR, YOLO, and Household Store."""
     ollama_status = check_ollama()
     ocr_status = is_ocr_available()
     yolo_status = os.path.isfile(YOLO_MODEL_PATH)
@@ -65,23 +71,30 @@ async def health_check():
 
     return {
         "status": "healthy",
-        "service": "AI Product Guardian",
-        "version": "2.0.0",
+        "service": APP_NAME,
+        "version": APP_VERSION,
         "timestamp": datetime.now().isoformat(),
         "diagnostics": {
             "ollama_online": ollama_status["online"],
             "has_vision_model": ollama_status["has_vision_model"],
             "vision_model": ollama_status["vision_model"],
-            "tesseract_ocr_available": ocr_status,
+            "ocr_available": ocr_status,
+            "ocr_engine": get_ocr_engine_name(),
             "yolo_model_loaded": yolo_status
         },
-        "registry_stats": stats
+        "household_stats": stats
     }
+
+
+@app.get("/api/rooms")
+async def list_rooms():
+    """Return available room presets for household organization."""
+    return {"rooms": ROOMS}
 
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_home(request: Request):
-    """Serve the single-page interactive AI Product Guardian Web Dashboard."""
+    """Serve the single-page interactive HomeMind Household Intelligence Dashboard."""
     ollama_status = check_ollama()
     ocr_status = is_ocr_available()
     yolo_status = os.path.isfile(YOLO_MODEL_PATH)
@@ -91,11 +104,15 @@ async def dashboard_home(request: Request):
         request=request,
         name="index.html",
         context={
+            "app_name": APP_NAME,
+            "app_tagline": APP_TAGLINE,
             "stats": stats,
+            "rooms": ROOMS,
             "diagnostics": {
                 "ollama": ollama_status["online"],
                 "vision": ollama_status["has_vision_model"],
                 "ocr": ocr_status,
+                "ocr_engine": get_ocr_engine_name(),
                 "yolo": yolo_status
             }
         }
@@ -105,7 +122,7 @@ async def dashboard_home(request: Request):
 if __name__ == "__main__":
     import uvicorn
     print("=" * 65)
-    print("  AI PRODUCT GUARDIAN — MASTER SERVER")
+    print(f"  {APP_NAME} — HOUSEHOLD INTELLIGENCE SERVER")
     print(f"  Web Dashboard & API: http://{SERVER_HOST}:{SERVER_PORT}")
     print("=" * 65)
     uvicorn.run("app.main:app", host=SERVER_HOST, port=SERVER_PORT, reload=True)

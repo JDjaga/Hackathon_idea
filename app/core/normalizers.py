@@ -1,11 +1,14 @@
 """
-AI Product Guardian — Data Normalizers
-Robust, deterministic sanitizers and formatters for text, dates, prices, models, serial numbers, and sellers.
+HomeMind — Data Normalizers
+Robust, deterministic sanitizers and formatters for text, dates, prices, models, serial numbers,
+sellers, warranty durations, and maintenance schedules.
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Any, Dict
+
+from app.config import WARRANTY_DURATION_MAP, DEFAULT_MAINTENANCE_INTERVALS, HEALTH_URGENT_DAYS, HEALTH_ATTENTION_DAYS
 
 NULL_LIKE_STRINGS = {
     "", "null", "none", "unknown", "n/a", "na", "nil", "undefined",
@@ -180,9 +183,151 @@ def normalize_seller_name(value: Any) -> Optional[str]:
     return text if text else None
 
 
+# ============================================================
+# WARRANTY & MAINTENANCE INTELLIGENCE
+# ============================================================
+
+def parse_warranty_duration(warranty_str: Any) -> Optional[int]:
+    """
+    Parse a warranty string into days.
+    Examples: '2-YEAR' -> 730, '6 months' -> 180, '1 Year Comprehensive' -> 365
+    """
+    if warranty_str is None:
+        return None
+    s = str(warranty_str).upper().strip()
+    if not s or s.lower() in NULL_LIKE_STRINGS:
+        return None
+
+    # Direct lookup
+    if s in WARRANTY_DURATION_MAP:
+        return WARRANTY_DURATION_MAP[s]
+
+    # Extract number + unit pattern
+    match = re.search(r"(\d+)\s*[-\s]?\s*(YEAR|MONTH|DAY)S?", s, re.IGNORECASE)
+    if match:
+        num = int(match.group(1))
+        unit = match.group(2).upper()
+        if unit == "YEAR":
+            return num * 365
+        elif unit == "MONTH":
+            return num * 30
+        elif unit == "DAY":
+            return num
+
+    # Try just a number (assume years if ≤10, else days)
+    num_match = re.search(r"(\d+)", s)
+    if num_match:
+        num = int(num_match.group(1))
+        if num <= 10:
+            return num * 365
+        return num
+
+    return None
+
+
+def compute_expiry_date(purchase_date_str: Optional[str], warranty_str: Optional[str]) -> Optional[str]:
+    """
+    Compute warranty expiry date from purchase date and warranty duration.
+    Returns ISO date string or None.
+    """
+    if not purchase_date_str or not warranty_str:
+        return None
+
+    duration_days = parse_warranty_duration(warranty_str)
+    if not duration_days:
+        return None
+
+    norm_date = normalize_date(purchase_date_str)
+    if not norm_date:
+        return None
+
+    try:
+        purchase_dt = datetime.strptime(norm_date, "%Y-%m-%d")
+        expiry_dt = purchase_dt + timedelta(days=duration_days)
+        return expiry_dt.strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+
+
+def compute_next_maintenance(purchase_date_str: Optional[str], interval_days: Optional[int] = None, product_name: Optional[str] = None) -> Optional[str]:
+    """
+    Compute next maintenance date based on purchase date and interval.
+    If interval_days is not provided, uses DEFAULT_MAINTENANCE_INTERVALS by product name.
+    Returns the next future maintenance date as ISO string.
+    """
+    if not purchase_date_str:
+        return None
+
+    if interval_days is None and product_name:
+        for key, days in DEFAULT_MAINTENANCE_INTERVALS.items():
+            if key.lower() in str(product_name).lower():
+                interval_days = days
+                break
+
+    if not interval_days:
+        return None
+
+    norm_date = normalize_date(purchase_date_str)
+    if not norm_date:
+        return None
+
+    try:
+        purchase_dt = datetime.strptime(norm_date, "%Y-%m-%d")
+        today = datetime.now()
+        next_date = purchase_dt + timedelta(days=interval_days)
+
+        # Fast-forward to the next future maintenance date
+        while next_date < today:
+            next_date += timedelta(days=interval_days)
+
+        return next_date.strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+
+
+def compute_health_status(warranty_expiry: Optional[str], next_maintenance: Optional[str]) -> str:
+    """
+    Compute product health status based on warranty expiry and maintenance schedule.
+    Returns: 'expired', 'urgent', 'attention', 'good'
+    """
+    today = datetime.now()
+    status = "good"
+
+    if warranty_expiry:
+        try:
+            expiry_dt = datetime.strptime(warranty_expiry, "%Y-%m-%d")
+            days_until = (expiry_dt - today).days
+            if days_until < 0:
+                return "expired"
+            elif days_until <= HEALTH_URGENT_DAYS:
+                status = "urgent"
+            elif days_until <= HEALTH_ATTENTION_DAYS:
+                status = "attention"
+        except (ValueError, TypeError):
+            pass
+
+    if next_maintenance and status == "good":
+        try:
+            maint_dt = datetime.strptime(next_maintenance, "%Y-%m-%d")
+            days_until = (maint_dt - today).days
+            if days_until <= 0:
+                status = "urgent"
+            elif days_until <= 14:
+                status = "attention"
+        except (ValueError, TypeError):
+            pass
+
+    return status
+
+
+# ============================================================
+# PASSPORT NORMALIZER
+# ============================================================
+
 def normalize_passport(passport: Dict[str, Any]) -> Dict[str, Any]:
     """
     Apply comprehensive normalization to all fields of a Digital Product Passport dictionary.
+    Auto-computes warranty expiry, next maintenance, and health status.
     """
     if not isinstance(passport, dict):
         return {}
@@ -192,7 +337,7 @@ def normalize_passport(passport: Dict[str, Any]) -> Dict[str, Any]:
     # String fields
     for field in ["product", "brand", "model", "serial_number", "seller",
                   "category", "customer_name", "order_id", "invoice_number",
-                  "warranty", "currency", "document_type"]:
+                  "warranty", "currency", "document_type", "room"]:
         if field in normalized:
             normalized[field] = normalize_text(normalized[field])
 
@@ -207,7 +352,43 @@ def normalize_passport(passport: Dict[str, Any]) -> Dict[str, Any]:
     # Default lists
     if "product_images" not in normalized or not isinstance(normalized["product_images"], list):
         normalized["product_images"] = []
-    if "linked_products" not in normalized or not isinstance(normalized["linked_products"], list):
-        normalized["linked_products"] = []
+    if "linked_documents" not in normalized or not isinstance(normalized["linked_documents"], list):
+        normalized["linked_documents"] = []
+    if "events" not in normalized or not isinstance(normalized["events"], list):
+        normalized["events"] = []
+
+    # Remove legacy field
+    normalized.pop("linked_products", None)
+
+    # Auto-compute warranty expiry
+    if normalized.get("purchase_date") and normalized.get("warranty"):
+        computed_expiry = compute_expiry_date(normalized["purchase_date"], normalized["warranty"])
+        if computed_expiry:
+            normalized["warranty_expiry_date"] = computed_expiry
+
+    # Auto-compute next maintenance date
+    if normalized.get("purchase_date"):
+        interval = normalized.get("maintenance_interval_days")
+        product_name = normalized.get("product")
+        computed_maint = compute_next_maintenance(
+            normalized["purchase_date"],
+            interval_days=interval,
+            product_name=product_name
+        )
+        if computed_maint:
+            normalized["next_maintenance_date"] = computed_maint
+        # Store the interval if it was auto-detected
+        if not interval and product_name:
+            for key, days in DEFAULT_MAINTENANCE_INTERVALS.items():
+                if key.lower() in str(product_name).lower():
+                    normalized["maintenance_interval_days"] = days
+                    break
+
+    # Auto-compute health status
+    normalized["health_status"] = compute_health_status(
+        normalized.get("warranty_expiry_date"),
+        normalized.get("next_maintenance_date")
+    )
 
     return normalized
+

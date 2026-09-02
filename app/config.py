@@ -1,6 +1,7 @@
 """
-AI Product Guardian — Centralized Configuration
+HomeMind — Centralized Configuration
 Single source of truth for all paths, model configurations, endpoints, and detection thresholds.
+"Your phone remembers everything you own."
 """
 
 import os
@@ -30,6 +31,53 @@ TESSERACT_PATH_FILE = ROOT_DIR / "tesseract_path.txt"
 
 STATIC_DIR = APP_DIR / "static"
 TEMPLATES_DIR = APP_DIR / "templates"
+
+# ============================================================
+# BRANDING
+# ============================================================
+
+APP_NAME = "HomeMind"
+APP_TAGLINE = "Your phone remembers everything you own."
+APP_VERSION = "3.0.0"
+
+# ============================================================
+# HOUSEHOLD CONFIGURATION
+# ============================================================
+
+ROOMS = [
+    "Kitchen", "Living Room", "Bedroom", "Bathroom",
+    "Utility", "Garage", "Office", "Balcony", "Other"
+]
+
+# Warranty duration string → days mapping
+WARRANTY_DURATION_MAP = {
+    "1-MONTH": 30,
+    "3-MONTH": 90,
+    "6-MONTH": 180,
+    "1-YEAR": 365,
+    "2-YEAR": 730,
+    "3-YEAR": 1095,
+    "4-YEAR": 1460,
+    "5-YEAR": 1825,
+    "10-YEAR": 3650,
+    "LIFETIME": 36500,
+}
+
+# Default maintenance intervals (days) by product category
+DEFAULT_MAINTENANCE_INTERVALS = {
+    "Washing Machine": 180,
+    "Air Conditioner": 90,
+    "Water Purifier": 120,
+    "Refrigerator": 365,
+    "Dishwasher": 180,
+    "Microwave": 365,
+    "Vacuum": 90,
+    "Air Purifier": 90,
+}
+
+# Health status thresholds (days until warranty expiry)
+HEALTH_URGENT_DAYS = 30       # ≤30 days → urgent (red)
+HEALTH_ATTENTION_DAYS = 90    # ≤90 days → attention (orange)
 
 # ============================================================
 # OLLAMA & VISION AI CONFIG

@@ -1,6 +1,7 @@
 """
-AI Product Guardian — Multi-Variant OCR Engine
-Preprocesses document images and extracts textual and spatial evidence using Tesseract.
+AI Product Guardian — Multi-Variant Neural OCR Engine
+Supports high-accuracy RapidOCR ONNX (primary, pure Python/ONNX, zero external binary)
+and Tesseract OCR (secondary fallback).
 """
 
 import os
@@ -12,41 +13,47 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from app.config import OCR_EVIDENCE_DIR, TESSERACT_PATH_FILE
 
-# Global state for Tesseract availability
+_RAPID_OCR = None
+_RAPID_OCR_AVAILABLE = False
 _TESSERACT_AVAILABLE = False
 _TESSERACT_CMD = None
 
-def _discover_tesseract() -> Optional[str]:
-    """Find tesseract binary on host system."""
-    import pytesseract
+# 1. Initialize RapidOCR (Neural ONNX Engine)
+try:
+    from rapidocr_onnxruntime import RapidOCR
+    _RAPID_OCR = RapidOCR()
+    _RAPID_OCR_AVAILABLE = True
+except Exception:
+    _RAPID_OCR_AVAILABLE = False
 
-    # 1. Check custom override file
-    if TESSERACT_PATH_FILE.exists():
-        try:
+# 2. Discover Tesseract (System Binary Fallback)
+def _discover_tesseract() -> Optional[str]:
+    """Find tesseract binary on host system if available."""
+    try:
+        import pytesseract
+
+        if TESSERACT_PATH_FILE.exists():
             custom_path = TESSERACT_PATH_FILE.read_text().strip()
             if os.path.isfile(custom_path):
                 pytesseract.pytesseract.tesseract_cmd = custom_path
                 return custom_path
-        except Exception:
-            pass
 
-    # 2. Check system PATH
-    path_bin = shutil.which("tesseract")
-    if path_bin:
-        pytesseract.pytesseract.tesseract_cmd = path_bin
-        return path_bin
+        path_bin = shutil.which("tesseract")
+        if path_bin:
+            pytesseract.pytesseract.tesseract_cmd = path_bin
+            return path_bin
 
-    # 3. Check common Windows installation locations
-    windows_paths = [
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")
-    ]
-    for p in windows_paths:
-        if os.path.isfile(p):
-            pytesseract.pytesseract.tesseract_cmd = p
-            return p
-
+        windows_paths = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")
+        ]
+        for p in windows_paths:
+            if os.path.isfile(p):
+                pytesseract.pytesseract.tesseract_cmd = p
+                return p
+    except Exception:
+        pass
     return None
 
 try:
@@ -58,79 +65,111 @@ except ImportError:
 
 
 def is_ocr_available() -> bool:
-    """Return True if Tesseract OCR is installed and available."""
-    return _TESSERACT_AVAILABLE
+    """Return True if either RapidOCR ONNX or Tesseract OCR is available."""
+    return _RAPID_OCR_AVAILABLE or _TESSERACT_AVAILABLE
+
+
+def get_ocr_engine_name() -> str:
+    """Return the name of the active OCR engine."""
+    if _RAPID_OCR_AVAILABLE:
+        return "RapidOCR (Neural ONNX)"
+    elif _TESSERACT_AVAILABLE:
+        return "Tesseract OCR"
+    return "Fallback Mode"
 
 
 def generate_image_variants(image: Image.Image) -> List[Image.Image]:
     """Create contrast and enhancement variants of image for multi-pass OCR."""
     variants = [image]
-
-    # Grayscale
     gray = ImageOps.grayscale(image)
     variants.append(gray)
-
-    # High Contrast
     enhancer = ImageEnhance.Contrast(gray)
     variants.append(enhancer.enhance(2.0))
-
-    # Sharpened
     sharpened = gray.filter(ImageFilter.SHARPEN)
     variants.append(sharpened)
-
     return variants
 
 
 def extract_ocr_text(image_path: str) -> Dict[str, Any]:
     """
-    Run multi-variant OCR on an image and return extracted text and line evidence.
+    Run neural OCR on an image and return extracted text, confidence, and line evidence.
+    Uses RapidOCR (ONNX Runtime) as primary engine, falling back to Tesseract.
     """
-    if not _TESSERACT_AVAILABLE:
+    if not os.path.isfile(image_path):
         return {
             "image": str(image_path),
             "text": "",
             "lines": [],
             "available": False,
-            "error": "Tesseract binary not found on system."
+            "error": "File not found"
         }
 
-    try:
-        with Image.open(image_path) as img:
-            variants = generate_image_variants(img)
-            extracted_texts = []
+    # Method 1: RapidOCR (Neural ONNX — ultra-fast & high accuracy)
+    if _RAPID_OCR_AVAILABLE:
+        try:
+            results, elapse = _RAPID_OCR(image_path)
+            lines = []
+            text_parts = []
 
-            for var in variants:
-                try:
-                    txt = pytesseract.image_to_string(var, config="--psm 6")
-                    if txt.strip():
-                        extracted_texts.append(txt.strip())
-                except Exception:
-                    continue
+            if results:
+                for box, txt, score in results:
+                    cleaned_txt = str(txt).strip()
+                    if cleaned_txt:
+                        lines.append(cleaned_txt)
+                        text_parts.append(cleaned_txt)
 
-            # Pick the longest / most complete text extraction
-            best_text = max(extracted_texts, key=len) if extracted_texts else ""
-            lines = [l.strip() for l in best_text.splitlines() if l.strip()]
-
+            full_text = "\n".join(text_parts)
             result = {
                 "image": str(image_path),
-                "text": best_text,
+                "text": full_text,
                 "lines": lines,
                 "available": True,
-                "variants_processed": len(variants)
+                "engine": "rapidocr_onnx",
+                "inference_time_ms": elapse if isinstance(elapse, (int, float)) else None
             }
 
-            # Save OCR evidence to data directory
             evidence_file = OCR_EVIDENCE_DIR / f"{Path(image_path).stem}_ocr.json"
             with open(evidence_file, "w", encoding="utf-8") as f:
-                json.dump(result, f, indent=2)
+                json.dump(result, f, indent=2, ensure_ascii=False)
 
             return result
+        except Exception as e:
+            print(f"[OCR] RapidOCR error ({e}), trying secondary fallback...")
 
-    except Exception as e:
-        return {
-            "image": str(image_path),
-            "text": "",
-            "lines": [],
-            "available": False,
-            "error": str(e)
-        }
+    # Method 2: Tesseract OCR fallback
+    if _TESSERACT_AVAILABLE:
+        try:
+            import pytesseract
+            with Image.open(image_path) as img:
+                variants = generate_image_variants(img)
+                extracted_texts = []
+                for var in variants:
+                    try:
+                        txt = pytesseract.image_to_string(var, config="--psm 6")
+                        if txt.strip():
+                            extracted_texts.append(txt.strip())
+                    except Exception:
+                        continue
+
+                best_text = max(extracted_texts, key=len) if extracted_texts else ""
+                lines = [l.strip() for l in best_text.splitlines() if l.strip()]
+
+                return {
+                    "image": str(image_path),
+                    "text": best_text,
+                    "lines": lines,
+                    "available": True,
+                    "engine": "tesseract"
+                }
+        except Exception as e:
+            print(f"[OCR] Tesseract error ({e})")
+
+    # Method 3: Graceful fallback
+    return {
+        "image": str(image_path),
+        "text": "",
+        "lines": [],
+        "available": False,
+        "engine": "none",
+        "error": "No OCR engine available"
+    }

@@ -14,3 +14,5 @@ Thumbs.db
 *.zip
 *.tar.gz
 ocr_output/
+data/ocr_evidence/
+data/*.tmp
