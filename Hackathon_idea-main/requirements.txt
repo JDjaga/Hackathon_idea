@@ -1,0 +1,16 @@
+# Core GUI & Display
+customtkinter>=5.2.0
+Pillow>=10.0.0
+
+# OCR & Vision AI
+pytesseract>=0.3.10
+requests>=2.31.0
+ollama>=0.3.0
+pydantic>=2.5.0
+
+# Object Detection & Computer Vision
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+
+# Optional OCR Engine
+# paddleocr>=2.7.0
