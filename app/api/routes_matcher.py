@@ -8,10 +8,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.core.identity_matcher import score_match, match_passport
-from app.core.passport_store import PassportStore
+from app.core.passport_store import get_passport_store
 
 router = APIRouter(prefix="/api/matcher", tags=["Identity Matcher & Conflict Radar"])
-store = PassportStore()
+store = get_passport_store()
 
 
 class PassportComparisonRequest(BaseModel):

@@ -168,12 +168,24 @@ def match_passport(
             continue
 
         res = score_match(new_passport, existing, serial_threshold)
-        if res["score"] > best_score:
-            best_score = res["score"]
-            best_match = {
-                "passport": existing,
-                "result": res
-            }
+        score = res["score"]
+        conflicts_count = len(res["conflicting_fields"])
+
+        if best_match is None:
+            if score >= min_match_fields:
+                best_score = score
+                best_match = {
+                    "passport": existing,
+                    "result": res
+                }
+        else:
+            best_conflicts = len(best_match["result"]["conflicting_fields"])
+            if (score > best_score) or (score == best_score and conflicts_count < best_conflicts):
+                best_score = score
+                best_match = {
+                    "passport": existing,
+                    "result": res
+                }
 
     # If insufficient identity fields matched, consider it a new product
     if best_match is None or best_score < min_match_fields:

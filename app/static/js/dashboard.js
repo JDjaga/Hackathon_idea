@@ -629,22 +629,47 @@ function renderVaultTable(passports) {
       <td class="font-mono">${p.model || '—'}</td>
       <td class="font-mono">${p.serial_number || '—'}</td>
       <td class="font-mono">${p.purchase_date || '—'}</td>
-      <td>${p.purchase_price ? `${p.currency || 'INR'} ${p.purchase_price}` : '—'}</td>
+      <td>${p.purchase_price ? `${p.currency || 'INR'} ${Number(p.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</td>
       <td>${p.seller || '—'}</td>
       <td>${statusBadge}</td>
-      <td>
+      <td style="white-space:nowrap;">
         <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="viewPassportModal('${p.passport_id}')">View</button>
+        <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; color:var(--crimson-primary); border-color:var(--crimson-border); margin-left:4px;" onclick="deletePassport('${p.passport_id}')">Delete</button>
       </td>
     `;
     tbody.appendChild(tr);
   });
 }
 
+window.deletePassport = async function(passportId) {
+  if (!confirm(`Are you sure you want to delete passport ${passportId}?`)) return;
+
+  try {
+    const res = await fetch(`/api/dpp/passports/${passportId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete passport');
+    showToast(`Passport ${passportId} removed from vault.`);
+    fetchVaultPassports();
+    refreshGlobalStats();
+  } catch (err) {
+    showToast(`Delete error: ${err.message}`);
+  }
+};
+
 window.viewPassportModal = async function(passportId) {
   try {
     const res = await fetch(`/api/dpp/passports/${passportId}`);
     if (!res.ok) throw new Error('Passport not found');
     const p = await res.json();
+
+    const status = (p.identity_match && p.identity_match.status) || 'new_product';
+    let bannerHtml = '';
+    if (status === 'verified') {
+      bannerHtml = '<div class="cert-verification-banner verified"><div class="banner-icon">✓</div><div><span class="banner-title">Identity Verified</span><span class="banner-desc">Matched canonical product records.</span></div></div>';
+    } else if (status === 'conflict') {
+      bannerHtml = '<div class="cert-verification-banner conflict"><div class="banner-icon">⚠️</div><div><span class="banner-title">Conflict Flagged</span><span class="banner-desc">Discrepancy with existing records.</span></div></div>';
+    } else {
+      bannerHtml = '<div class="cert-verification-banner new_product"><div class="banner-icon">✨</div><div><span class="banner-title">Original Registration</span><span class="banner-desc">First canonical mint for this serial.</span></div></div>';
+    }
 
     const target = document.getElementById('modal-certificate-target');
     target.innerHTML = `
@@ -657,13 +682,21 @@ window.viewPassportModal = async function(passportId) {
           </div>
           <div class="cert-id-box"><span class="id-label">ID</span><span class="id-value">${p.passport_id}</span></div>
         </div>
+        ${bannerHtml}
         <div class="cert-body-grid">
           <div class="cert-field"><span class="field-label">Model</span><span class="field-value font-mono">${p.model || '—'}</span></div>
           <div class="cert-field"><span class="field-label">Serial</span><span class="field-value font-mono gold-highlight">${p.serial_number || '—'}</span></div>
           <div class="cert-field"><span class="field-label">Date</span><span class="field-value font-mono">${p.purchase_date || '—'}</span></div>
-          <div class="cert-field"><span class="field-label">Price</span><span class="field-value">${p.purchase_price ? `${p.currency || 'INR'} ${p.purchase_price}` : '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Price</span><span class="field-value">${p.purchase_price ? `${p.currency || 'INR'} ${Number(p.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</span></div>
           <div class="cert-field"><span class="field-label">Seller</span><span class="field-value">${p.seller || '—'}</span></div>
           <div class="cert-field"><span class="field-label">Customer</span><span class="field-value">${p.customer_name || '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Warranty</span><span class="field-value">${p.warranty || 'Standard'}</span></div>
+          <div class="cert-field"><span class="field-label">Category</span><span class="field-value">${p.category || 'Appliance'}</span></div>
+        </div>
+        <div class="cert-actions" style="margin-top:1.5rem;">
+          <button class="btn btn-primary" onclick="exportSinglePassportJson('${p.passport_id}')">
+            <span>📥</span> Export JSON
+          </button>
         </div>
       </div>
     `;
@@ -671,6 +704,23 @@ window.viewPassportModal = async function(passportId) {
     document.getElementById('passport-modal').classList.remove('hidden');
   } catch (err) {
     showToast(`Failed to view passport: ${err.message}`);
+  }
+};
+
+window.exportSinglePassportJson = async function(passportId) {
+  try {
+    const res = await fetch(`/api/dpp/passports/${passportId}`);
+    const p = await res.json();
+    const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${passportId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Passport ${passportId} JSON exported!`);
+  } catch (e) {
+    showToast('Failed to export passport');
   }
 };
 

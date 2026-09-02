@@ -11,10 +11,10 @@ from pydantic import BaseModel
 
 from app.config import DATA_DIR
 from app.core.product_detector import detect_appliances
-from app.core.passport_store import PassportStore
+from app.core.passport_store import get_passport_store
 
 router = APIRouter(prefix="/api/detector", tags=["Appliance Detection"])
-store = PassportStore()
+store = get_passport_store()
 
 
 class LinkDetectionRequest(BaseModel):

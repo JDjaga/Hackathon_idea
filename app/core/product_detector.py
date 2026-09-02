@@ -9,6 +9,7 @@ import cv2
 import json
 import base64
 import requests
+import numpy as np
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from PIL import Image
@@ -156,7 +157,15 @@ def detect_appliances(image_path: str, annotate: bool = True) -> Dict[str, Any]:
 
     detections = []
     yolo = get_yolo_model()
-    image_cv = cv2.imread(image_path)
+    
+    try:
+        with open(image_path, "rb") as f:
+            img_bytes = f.read()
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        image_cv = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except Exception:
+        image_cv = cv2.imread(image_path)
+
     if image_cv is None:
         raise ValueError(f"OpenCV could not decode image at {image_path}")
 

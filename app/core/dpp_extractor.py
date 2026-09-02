@@ -112,12 +112,29 @@ def clean_json_response(raw_text: str) -> Dict[str, Any]:
     text = re.sub(r"^```\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
 
-    # Extract JSON between outermost braces
-    match = re.search(r"\{.*\}", text, re.DOTALL)
+    # Extract JSON between outermost braces or brackets
+    match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
     if match:
         text = match.group(0)
 
-    return json.loads(text)
+    # Remove invalid trailing commas common in LLM JSON
+    text = re.sub(r",\s*([\]}])", r"\1", text)
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        # Fallback: escape single backslashes and retry
+        fixed_text = re.sub(r'\\(?![/u"bfnrt])', r'\\\\', text)
+        parsed = json.loads(fixed_text)
+
+    # Wrap array in standard schema if model returned list
+    if isinstance(parsed, list):
+        return {"document_type": "scanned_document", "passports": parsed}
+    # Wrap single passport dict if model returned flat product
+    elif isinstance(parsed, dict) and "passports" not in parsed and ("product" in parsed or "model" in parsed):
+        return {"document_type": parsed.get("document_type", "scanned_document"), "passports": [parsed]}
+
+    return parsed
 
 
 def fallback_sample_extractor(image_path: str, ocr_result: Dict[str, Any]) -> List[Dict[str, Any]]:

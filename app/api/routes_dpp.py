@@ -10,11 +10,11 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.config import DATA_DIR
-from app.core.passport_store import PassportStore
+from app.core.passport_store import get_passport_store
 from app.core.dpp_extractor import extract_document_dpp
 
 router = APIRouter(prefix="/api/dpp", tags=["Digital Product Passports"])
-store = PassportStore()
+store = get_passport_store()
 
 # Ensure demo data is seeded if empty
 store.seed_demo_passports()

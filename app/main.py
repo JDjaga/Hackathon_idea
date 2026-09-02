@@ -21,7 +21,7 @@ from app.config import (
 from app.api import dpp_router, matcher_router, detector_router, samples_router
 from app.core.dpp_extractor import check_ollama
 from app.core.ocr_engine import is_ocr_available
-from app.core.passport_store import PassportStore
+from app.core.passport_store import get_passport_store
 
 # Initialize FastAPI Application
 app = FastAPI(
@@ -52,7 +52,7 @@ app.include_router(matcher_router)
 app.include_router(detector_router)
 app.include_router(samples_router)
 
-store = PassportStore()
+store = get_passport_store()
 
 
 @app.get("/api/health")
@@ -88,9 +88,9 @@ async def dashboard_home(request: Request):
     stats = store.stats()
 
     return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
+        request=request,
+        name="index.html",
+        context={
             "stats": stats,
             "diagnostics": {
                 "ollama": ollama_status["online"],

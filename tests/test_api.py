@@ -49,6 +49,33 @@ class TestAPIEndpoints(unittest.TestCase):
         data = res.json()
         self.assertIn("samples", data)
 
+    def test_home_dashboard(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("AI PRODUCT", res.text)
+        self.assertIn("Document Studio", res.text)
+
+    def test_passport_lifecycle(self):
+        # Create
+        create_res = self.client.post("/api/dpp/passports", json={
+            "product": "Test Appliance",
+            "brand": "TestBrand",
+            "model": "TB-100",
+            "serial_number": "SN-TEST-99"
+        })
+        self.assertEqual(create_res.status_code, 200)
+        p_id = create_res.json()["passport"]["passport_id"]
+
+        # Fetch
+        get_res = self.client.get(f"/api/dpp/passports/{p_id}")
+        self.assertEqual(get_res.status_code, 200)
+        self.assertEqual(get_res.json()["model"], "TB-100")
+
+        # Delete
+        del_res = self.client.delete(f"/api/dpp/passports/{p_id}")
+        self.assertEqual(del_res.status_code, 200)
+        self.assertTrue(del_res.json()["deleted"])
+
 
 if __name__ == "__main__":
     unittest.main()
