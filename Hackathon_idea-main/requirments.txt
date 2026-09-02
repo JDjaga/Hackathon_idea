@@ -1,8 +1,0 @@
-customtkinter
-pytesseract
-Pillow
-ollama
-pydantic
-paddleocr
-requests
-ultralytics

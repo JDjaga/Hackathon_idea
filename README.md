@@ -1,114 +1,90 @@
-# Textemage - Digital Product Passport (DPP) & Vision AI Engine
+# 🛡️ AI Product Guardian
 
-An intelligent document and appliance understanding system that automatically extracts, validates, and generates **Digital Product Passports** from paper warranty cards, invoices, receipts, and product labels using Vision-Language Models (VLM) and YOLO object detection.
+> **AI-Powered Digital Product Passport (DPP) & Product Identity Verification Engine**
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![YOLOv8](https://img.shields.io/badge/YOLOv8-Ultralytics-orange.svg)](https://github.com/ultralytics/ultralytics)
 
 ---
 
 ## 🌟 Key Features
 
-- **Document Understanding & Checkbox Reasoning:** Analyzes multi-product warranty cards, receipts, and invoices. Confirms actual purchase intent by recognizing checked/selected boxes (e.g. `[✓] Washing Machine`).
-- **Multi-Product Passport Generation:** Generates individual, isolated Digital Product Passports for each verified product on a single document without hallucinating or cross-contaminating metadata.
-- **Hybrid Appliance Detection:** Combines **YOLO (yolo26n.pt)** object localization with **Qwen2.5-VL** semantic fallback for recognizing home appliances and consumer electronics.
-- **Multi-Stage OCR Preprocessing:** Generates image enhancement variants (grayscale, contrast boost, unsharp mask, adaptive binarization) with Tesseract/PaddleOCR supporting evidence.
-- **Certificate-Style Passport UI:** Interactive desktop viewer featuring a dark navy and gold theme, security seals, barcode visuals, warranty status badges, and metadata details.
-- **Persistent Passport Store:** Local JSON document store supporting ID generation, image attachments, and detection linkage.
+1. **📄 Document Intelligence Studio**
+   - Multi-variant OCR preprocessing with Tesseract auto-discovery.
+   - Multimodal VLM (Qwen2.5-VL) reasoning with explicit **checkbox discrimination** (only extracts checked items, ignoring unselected printed categories).
+   - Multi-product isolation (produces independent passports per item from multi-product invoices).
+
+2. **⚡ Deterministic Identity Matcher & Conflict Radar**
+   - Pure mathematical comparison engine (fuzzy Levenshtein distance for serials, token overlap for corporate sellers, ISO date normalizers).
+   - Real-time side-by-side visual diff highlighting verified matching fields (emerald green) vs conflicting serials/dates (crimson red).
+
+3. **👁️ Appliance Object Vision**
+   - Ultralytics YOLOv8 object localization on physical home appliances.
+   - Bounding box rendering with confidence metrics and semantic VLM fallback.
+
+4. **🛡️ Certificate-Style Passport Vault**
+   - Luxury Dark & Gold digital certificate view with gold seal, QR verification code, barcode, and warranty tracking.
+   - Persistent local JSON database with multi-attribute search, conflict filtering, and JSON export.
+
+5. **⚡ Full-Featured REST API & Web Dashboard**
+   - Luxury glassmorphic web dashboard.
+   - Full OpenAPI/Swagger documentation at `/docs`.
 
 ---
 
-## 🏗️ Architecture & Pipeline
+## 🚀 Quick Start
 
-```
-┌────────────────────────────────┐
-│  Input Document / Photo Image  │
-└───────────────┬────────────────┘
-                │
-     ┌──────────┴──────────┐
-     ▼                     ▼
-┌──────────────┐    ┌──────────────┐
-│  OCR Engine  │    │ YOLO + Qwen  │
-│ Preprocess & │    │  Appliance   │
-│  Tesseract   │    │  Detection   │
-└──────┬───────┘    └──────┬───────┘
-       │                   │
-       └─────────┬─────────┘
-                 ▼
-     ┌───────────────────────┐
-     │   Ollama Qwen2.5-VL   │
-     │  Document Reasoning   │
-     └───────────┬───────────┘
-                 ▼
-     ┌───────────────────────┐
-     │ Passport Normalization│
-     └───────────┬───────────┘
-                 ▼
-     ┌───────────────────────┐
-     │  Passport UI & Store  │
-     └───────────────────────┘
+### 1. Install Dependencies
+```powershell
+python -m pip install -r requirements.txt
 ```
 
----
+### 2. Launch the Web Application
+```powershell
+python run.py
+```
+*This starts the FastAPI server and automatically opens `http://localhost:8000` in your browser.*
 
-## 🚀 Getting Started
-
-### 1. Prerequisites
-- **Python 3.10+**
-- **Ollama**: Download and install from [ollama.com](https://ollama.com)
-- **Tesseract OCR** (Optional for auxiliary OCR): [UB-Mannheim Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
-
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
+### 3. Optional: Interactive CLI Mode
+```powershell
+python run.py --cli
 ```
 
-### 3. Pull the Ollama Vision Model
-```bash
-ollama pull qwen2.5vl:7b
-ollama serve
+### 4. Optional: Run Automated Test Suite
+```powershell
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
 ---
 
-## 💻 Usage
+## 📁 Clean Project Architecture
 
-### Quick Launch Menu
-```bash
-python main.py
 ```
-
-### Direct Script Execution
-1. **Extract Passport from Document Image:**
-   ```bash
-   python Textemage.py
-   ```
-2. **Detect Appliances in Physical Photo:**
-   ```bash
-   python Hackathon_idea-main/product_detector.py
-   ```
-3. **Open Passport Viewer UI:**
-   ```bash
-   python Hackathon_idea-main/product_passport.py
-   ```
-4. **Test OCR Preprocessor:**
-   ```bash
-   python Hackathon_idea-main/test_ocr.py
-   ```
+c:\Users\acer\Documents\Hackathon_idea-main\
+├── app/                            # Master Application Package
+│   ├── config.py                   # Centralized settings & paths
+│   ├── main.py                     # FastAPI application
+│   ├── core/                       # Headless Core AI & Domain Engines
+│   │   ├── normalizers.py          # Pure sanitizers for dates, prices, models, serials
+│   │   ├── identity_matcher.py     # Deterministic matching & Conflict Radar
+│   │   ├── passport_store.py       # Thread-safe JSON passport database
+│   │   ├── ocr_engine.py           # Multi-variant OCR & Tesseract auto-discovery
+│   │   ├── dpp_extractor.py        # Checkbox reasoning, VLM extractor & fallback
+│   │   └── product_detector.py     # YOLO appliance localization & semantic fallback
+│   ├── api/                        # REST API Router Endpoints
+│   ├── static/                     # Web Dashboard Assets (CSS, JS, Images)
+│   └── templates/                  # Responsive Web UI Dashboard HTML
+├── samples/                        # Organized Test Datasets (Warranty, Invoices, Photos)
+├── models/                         # Single copy of YOLO weights (yolo26n.pt)
+├── data/                           # Local JSON Persistence
+├── tests/                          # Automated Test Suite
+└── run.py                          # Unified master launcher
+```
 
 ---
 
-## 📁 Project Structure
+## 🧪 API Documentation
 
-```
-├── main.py                  # Unified CLI launcher
-├── Textemage.py             # Root launcher / main DPP pipeline
-├── requirements.txt         # Core dependencies
-└── Hackathon_idea-main/
-    ├── Textemage.py         # Document extraction & UI coordinator
-    ├── product_passport.py  # Tkinter/CustomTkinter Passport Viewer GUI
-    ├── product_detector.py  # YOLO + Qwen appliance detector
-    ├── ocr_engine.py        # Multi-stage image preprocessor & OCR
-    ├── extract_product.py   # Multi-product extraction engine
-    ├── passport_store.py    # Local JSON document database
-    ├── test_ocr.py          # OCR diagnostics script
-    ├── yolo26n.pt           # YOLO neural network weights
-    └── tesseract_path.txt   # Custom Tesseract binary path configuration
-```
+Access the interactive Swagger UI at:
+👉 **[http://localhost:8000/docs](http://localhost:8000/docs)**
