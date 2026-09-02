@@ -1,398 +1,1830 @@
-"""
-TEXTEMAGE
-version: 1.4
-author: JD jaga
-license: MIT
-"""
+# ============================================================
+# TEXTEMAGE - DIGITAL PRODUCT PASSPORT GENERATOR
+# ============================================================
+#
+# Main responsibilities:
+#   1. Load product/warranty/invoice image
+#   2. Send image to Ollama Vision model
+#   3. Detect selected/checked products
+#   4. Extract each selected product independently
+#   5. Support multiple products in one document
+#   6. Save normalized passport JSON
+#   7. Launch passport UI using the EXACT generated JSON
+#
+# Vision model:
+#   qwen2.5vl:7b
+#
+# Ollama:
+#   http://127.0.0.1:11434
+# ============================================================
 
-import customtkinter as ctk
-import tkinter
 import os
 import sys
-from PIL import Image, ImageTk, UnidentifiedImageError, ImageEnhance, ImageFilter, ImageOps, ImageStat
-import random
-import pytesseract
-import webbrowser
-import io
+import json
+import base64
+import re
+import subprocess
+import tkinter as tk
 
-ctk.set_default_color_theme(random.choice(['blue','green','dark-blue']))
+from tkinter import filedialog, messagebox
 
-root = ctk.CTk()
-root.title("TEXTEMAGE")
-root.geometry("900x500")
-root.minsize(600,400)
-root.rowconfigure(0, weight=1)
-root.columnconfigure((0,1), weight=1)
-root.bind("<1>", lambda event: event.widget.focus_set())
+import requests
+from PIL import Image
 
-def resource(relative_path):
-    # resource finder via pyinstaller
-    base_path = getattr(
-        sys,
-        '_MEIPASS',
-        os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_path, relative_path)
 
-root.wm_iconbitmap()
-icopath = ImageTk.PhotoImage(file=resource("icon.png"))
-root.iconphoto(False, icopath)
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-file = ""
-image = ""
-previous = ""
+MODEL_NAME = "qwen2.5vl:7b"
 
-def load_image():
-    global file, image, img, previous
-    if os.path.exists(file):
-        previous = file
-        if len(os.path.basename(file))>=30:
-            open_button.configure(text=os.path.basename(file)[:30]+"..."+os.path.basename(file)[-3:])
-        else:
-            open_button.configure(text=os.path.basename(file))
+OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 
-        try:
-            Image.open(file)
-        except UnidentifiedImageError:
-            tkinter.messagebox.showerror("Oops!", "Not a valid image file!")
-            return
+SCRIPT_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
 
-        img = Image.open(file)   
-        image = ctk.CTkImage(img)
-        label_image.configure(text="", image=image)
-        image.configure(size=(label_image.winfo_height(),label_image.winfo_height()*img.size[1]/img.size[0]))
-        try:
-            tip.hide()
-        except Exception:
-            pass
-    else:
-        if previous!="":
-            file = previous
-            
-def open_image():
-    # open image file
-    global file
-    file = tkinter.filedialog.askopenfilename(filetypes =[('Images', ['*.png','*.jpg','*.jpeg','*.bmp','*.webp'])
-                                                          ,('All Files', '*.*')])
-    load_image()
-    
-def drop(event):
-    """
-    tkinter drag and drop not implemented for this python version
-    as it needs extra packages and manual modification in some libraries
-    """
-    
-    global file
-    if os.path.splitext(event.data.replace("{","").replace("}", ""))[-1] in ['.png','.jpg','.jpeg','.bmp','.webp']:
-        file = event.data.replace("{","").replace("}", "")
-    else:
-        return
+# IMPORTANT:
+# Always use absolute paths.
+JSON_FILE = os.path.join(
+    SCRIPT_DIR,
+    "product_passport.json"
+)
 
-    load_image()  
-    
-def resize_event(event):
-    # dynamic resize of the image with UI
-    global image
-    if image!="":
-        image.configure(size=(event.height,event.height*img.size[1]/img.size[0]))
+OCR_DIR = os.path.join(
+    SCRIPT_DIR,
+    "ocr_output"
+)
 
-def upscale_small_image(pil_img, min_width=1600):
-    w, h = pil_img.size
-    if w >= min_width:
-        return pil_img
-    scale = min_width / w
-    new_size = (int(w * scale), int(h * scale))
-    return pil_img.resize(new_size, Image.LANCZOS)
+EVIDENCE_FILE = os.path.join(
+    OCR_DIR,
+    "ocr_evidence.json"
+)
 
-def enhance_blue_text(pil_img):
-    if pil_img.mode != 'RGB':
-        pil_img = pil_img.convert('RGB')
-    r, g, b = pil_img.split()
-    r = ImageEnhance.Contrast(r).enhance(2.0)
-    g = ImageEnhance.Contrast(g).enhance(2.0)
-    b_enhanced = ImageEnhance.Contrast(b).enhance(3.0)
-    b_inverted = ImageOps.invert(b_enhanced)
-    merged_blue = Image.merge('RGB', (b_inverted, b_inverted, b_inverted))
-    gray_normal = ImageOps.grayscale(pil_img)
-    gray_blue = ImageOps.grayscale(merged_blue)
-    std_normal = ImageStat.Stat(gray_normal).stddev[0]
-    std_blue = ImageStat.Stat(gray_blue).stddev[0]
-    if std_blue > std_normal * 1.05:
-        return merged_blue
-    return pil_img
 
-def preprocess_for_ocr(pil_img):
-    if pil_img.mode in ('RGBA', 'LA', 'P'):
-        bg = Image.new('RGB', pil_img.size, (255, 255, 255))
-        if pil_img.mode == 'P':
-            pil_img = pil_img.convert('RGBA')
-        bg.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
-        pil_img = bg
-    elif pil_img.mode != 'RGB':
-        pil_img = pil_img.convert('RGB')
-    pil_img = upscale_small_image(pil_img, min_width=1600)
+# ============================================================
+# CREATE REQUIRED DIRECTORIES
+# ============================================================
+
+os.makedirs(
+    OCR_DIR,
+    exist_ok=True
+)
+
+
+# ============================================================
+# TERMINAL HELPERS
+# ============================================================
+
+def print_separator(char="=", length=70):
+
+    print(char * length)
+
+
+def print_title(title):
+
+    print()
+    print_separator("=")
+
+    print(title.center(70))
+
+    print_separator("=")
+
+
+# ============================================================
+# CHECK OLLAMA
+# ============================================================
+
+def check_ollama():
+
+    print()
+    print("Checking Ollama...")
+
     try:
-        pil_img = enhance_blue_text(pil_img)
-    except Exception:
-        pass
-    gray = ImageOps.grayscale(pil_img)
-    auto = ImageOps.autocontrast(gray, cutoff=1)
-    sharp = ImageEnhance.Sharpness(auto).enhance(2.0)
-    contrast = ImageEnhance.Contrast(sharp).enhance(1.5)
-    bright = ImageEnhance.Brightness(contrast).enhance(1.05)
-    denoised = bright.filter(ImageFilter.MedianFilter(size=1))
-    try:
-        thresh_val = ImageStat.Stat(denoised).median[0]
-        denoised = denoised.point(lambda x: 0 if x < thresh_val else 255, '1').convert('L')
-    except Exception:
-        pass
-    return denoised
 
-def preprocess_variants(pil_img):
-    variants = []
-    try:
-        main = preprocess_for_ocr(pil_img)
-        variants.append(main)
-    except Exception:
-        pass
-    try:
-        if pil_img.mode != 'RGB':
-            pil_img_rgb = pil_img.convert('RGB')
-        else:
-            pil_img_rgb = pil_img.copy()
-        w, h = pil_img_rgb.size
-        if w < 2000:
-            big = pil_img_rgb.resize((int(w*2), int(h*2)), Image.LANCZOS)
-        else:
-            big = pil_img_rgb
-        gray_big = ImageOps.grayscale(big)
-        contrast_big = ImageEnhance.Contrast(gray_big).enhance(2.0)
-        sharp_big = ImageEnhance.Sharpness(contrast_big).enhance(3.0)
-        variants.append(sharp_big)
-    except Exception:
-        pass
-    try:
-        if pil_img.mode != 'RGB':
-            inv = pil_img.convert('RGB')
-        else:
-            inv = pil_img.copy()
-        inv = upscale_small_image(inv, 1600)
-        inv = ImageOps.invert(inv)
-        inv_gray = ImageOps.grayscale(inv)
-        inv_proc = ImageEnhance.Contrast(inv_gray).enhance(1.8)
-        variants.append(inv_proc)
-    except Exception:
-        pass
-    if not variants:
-        variants.append(pil_img)
-    return variants
+        response = requests.get(
+            "http://127.0.0.1:11434/api/tags",
+            timeout=5
+        )
 
-def ocr_with_config(pil_img, psm, lang='eng'):
-    config = f'--oem 3 --psm {psm} -c preserve_interword_spaces=1'
-    try:
-        return pytesseract.image_to_string(pil_img, lang=lang, config=config)
-    except Exception:
-        return ""
+        if response.status_code != 200:
 
-def pick_best_result(results):
-    def score(text):
-        if not text:
-            return 0
-        clean = text.strip()
-        if not clean:
-            return 0
-        words = clean.split()
-        alpha_count = sum(c.isalpha() for c in clean)
-        digit_count = sum(c.isdigit() for c in clean)
-        printable = sum(c.isprintable() or c in '\n\t ' for c in clean)
-        s = (len(words) * 2 + alpha_count + digit_count * 0.5 + printable * 0.2)
-        if len(clean) > 0:
-            s += (alpha_count + digit_count) / len(clean) * 50
-        return s
-    scored = [(score(r), r) for r in results if r and r.strip()]
-    if not scored:
-        return ""
-    scored.sort(key=lambda x: -x[0])
-    return scored[0][1]
+            print(
+                "Ollama responded with status:",
+                response.status_code
+            )
 
-def convert():
-    # do the conversion with enhanced preprocessing
-    global processing_label
-    if not file:
-        return
-    try:
-        processing_label.configure(text="Processing...")
-        root.update_idletasks()
-        variants = preprocess_variants(img)
-        psm_modes = [6, 11, 4, 3, 7]
-        all_results = []
-        for v in variants:
-            for psm in psm_modes:
-                txt = ocr_with_config(v, psm)
-                if txt and txt.strip():
-                    all_results.append(txt)
-        result = pick_best_result(all_results)
-        if not result:
-            try:
-                result = pytesseract.image_to_string(img, config='--oem 3 --psm 3')
-            except Exception:
-                result = ""
-    except pytesseract.TesseractNotFoundError:
-        tkinter.messagebox.showerror("Missing Tesseract-OCR!",
-                                     "Tesseract is not installed or it's not in your PATH")
-        processing_label.configure(text="Ready")
-        return
+            return False
+
+        data = response.json()
+
+        models = data.get(
+            "models",
+            []
+        )
+
+        print()
+        print("Available Ollama models:")
+
+        model_names = []
+
+        for model in models:
+
+            name = model.get(
+                "name",
+                ""
+            )
+
+            if name:
+
+                model_names.append(
+                    name
+                )
+
+                print(
+                    " -",
+                    name
+                )
+
+        # Check exact model
+        found = False
+
+        for name in model_names:
+
+            if (
+                name == MODEL_NAME
+                or name.startswith(MODEL_NAME + ":")
+            ):
+
+                found = True
+                break
+
+        if not found:
+
+            print()
+            print(
+                "WARNING:"
+            )
+
+            print(
+                f"Model '{MODEL_NAME}' was not found."
+            )
+
+            print(
+                "Please run:"
+            )
+
+            print(
+                f"ollama pull {MODEL_NAME}"
+            )
+
+            return False
+
+        print()
+        print(
+            "Using vision model:",
+            MODEL_NAME
+        )
+
+        return True
+
+    except requests.exceptions.ConnectionError:
+
+        print()
+        print(
+            "ERROR: Ollama is not running."
+        )
+
+        print(
+            "Start Ollama and run the program again."
+        )
+
+        return False
+
     except Exception as e:
-        try:
-            result = pytesseract.image_to_string(img)
-        except Exception:
-            tkinter.messagebox.showerror("OCR Error", str(e))
-            processing_label.configure(text="Ready")
-            return
 
-    text_box.delete(1.0, tkinter.END)
-    text_box.insert(tkinter.END, result)
-    processing_label.configure(text=f"Ready | {len(result.split())} words extracted")
-    
-def do_popup(event, frame):
-    try: frame.tk_popup(event.x_root, event.y_root)
-    finally: frame.grab_release()
+        print(
+            "Ollama check failed:",
+            e
+        )
 
-def paste():
+        return False
+
+
+# ============================================================
+# IMAGE ENCODING
+# ============================================================
+
+def image_to_base64(image_path):
+
+    with open(
+        image_path,
+        "rb"
+    ) as f:
+
+        return base64.b64encode(
+            f.read()
+        ).decode(
+            "utf-8"
+        )
+
+
+# ============================================================
+# IMAGE INFORMATION
+# ============================================================
+
+def inspect_image(image_path):
+
     try:
-        text_box.index(text_box.insert(tkinter.END, root.clipboard_get()))
-    except:
+
+        with Image.open(
+            image_path
+        ) as img:
+
+            print()
+            print(
+                "Image:",
+                image_path
+            )
+
+            print(
+                "Original size:",
+                img.size
+            )
+
+            print(
+                "Image mode:",
+                img.mode
+            )
+
+            return img.size
+
+    except Exception as e:
+
+        print(
+            "Could not inspect image:",
+            e
+        )
+
+        return None
+
+
+# ============================================================
+# OPTIONAL OCR
+# ============================================================
+#
+# OCR is NOT required for the vision extraction.
+#
+# This function is intentionally optional because your
+# Tesseract installation currently has an eng.traineddata
+# path problem.
+#
+# Qwen2.5-VL will still receive the ORIGINAL IMAGE.
+# ============================================================
+
+def run_optional_tesseract(image_path):
+
+    try:
+
+        import pytesseract
+
+        print()
+        print(
+            "Attempting optional Tesseract OCR..."
+        )
+
+        text = pytesseract.image_to_string(
+            image_path,
+            lang="eng",
+            config="--psm 6"
+        )
+
+        if text and text.strip():
+
+            print(
+                "Tesseract OCR produced text."
+            )
+
+            return text.strip()
+
+        print(
+            "Tesseract returned no text."
+        )
+
+        return ""
+
+    except Exception as e:
+
+        print(
+            "Tesseract unavailable:",
+            e
+        )
+
+        print(
+            "Continuing with Vision AI."
+        )
+
+        return ""
+
+
+# ============================================================
+# VISION PROMPT
+# ============================================================
+
+VISION_PROMPT = r"""
+You are an extremely accurate document-understanding AI.
+
+Your task is to create DIGITAL PRODUCT PASSPORTS from the
+uploaded warranty card, invoice, receipt, product document,
+service document, or similar document.
+
+IMPORTANT:
+
+A single photograph may contain MULTIPLE PRODUCT TYPES.
+
+For example, a warranty card might contain checkboxes for:
+
+- Washing Machine
+- Tumble Dryer
+- Dishwasher
+- Small Domestic Appliances
+
+BUT only one or some of those boxes may actually be selected.
+
+============================================================
+MOST IMPORTANT RULE: CHECKED / SELECTED PRODUCT
+============================================================
+
+You MUST inspect the actual checkbox marks in the image.
+
+A product is considered PURCHASED / SELECTED only when the
+corresponding checkbox is visibly marked.
+
+Possible marks include:
+
+- ✓
+- ✔
+- X
+- handwritten tick
+- dark check mark
+- filled checkbox
+- handwritten selection mark
+- other clearly visible selection indicator
+
+DO NOT create a passport for a product merely because its
+name appears in the printed list.
+
+Example:
+
+[ ] Washing Machine
+[ ] Tumble Dryer
+[ ] Dishwasher
+[✓] Small Domestic Appliances
+
+Correct result:
+
+ONE passport:
+
+Product = Small Domestic Appliances
+
+Do NOT create passports for Washing Machine, Tumble Dryer,
+or Dishwasher.
+
+============================================================
+MULTIPLE SELECTED PRODUCTS
+============================================================
+
+If the document contains:
+
+[✓] Washing Machine
+[✓] Refrigerator
+[ ] Dishwasher
+
+then create TWO passports:
+
+Passport #1 = Washing Machine
+Passport #2 = Refrigerator
+
+Each passport must be independent.
+
+Do NOT merge their information.
+
+============================================================
+PRODUCT-SPECIFIC INFORMATION
+============================================================
+
+For every selected product, determine which model number,
+serial number, price, warranty, date, seller, etc. belongs
+to that particular product.
+
+If the document clearly associates a field with a selected
+product, use it.
+
+If a field cannot be reliably associated with a product,
+return null.
+
+DO NOT copy a field from another product just to fill a
+missing value.
+
+============================================================
+DO NOT HALLUCINATE
+============================================================
+
+Never invent:
+
+- product names
+- brand
+- model numbers
+- serial numbers
+- prices
+- dates
+- seller names
+- warranty periods
+- invoice numbers
+- order IDs
+
+If something is not readable or not present:
+
+return null.
+
+============================================================
+HANDWRITTEN TEXT
+============================================================
+
+Pay special attention to handwritten:
+
+- model numbers
+- serial numbers
+- dates
+- prices
+- seller/dealer names
+- customer names
+
+Read handwriting carefully.
+
+============================================================
+DOCUMENT TYPE
+============================================================
+
+Determine the document type.
+
+Examples:
+
+warranty_card
+warranty_certificate
+invoice
+receipt
+purchase_receipt
+service_document
+product_registration
+other
+
+============================================================
+CATEGORY
+============================================================
+
+Use the selected product category.
+
+Examples:
+
+Refrigerator
+Washing Machine
+Television
+Air Conditioner
+Microwave
+Dishwasher
+Small Domestic Appliances
+
+============================================================
+OUTPUT FORMAT
+============================================================
+
+Return ONLY valid JSON.
+
+Do not write Markdown.
+
+Do not write explanations.
+
+Do not write ```json.
+
+The exact format must be:
+
+{
+    "passports": [
+        {
+            "document_type": null,
+            "product": null,
+            "brand": null,
+            "model": null,
+            "serial_number": null,
+            "purchase_price": null,
+            "currency": null,
+            "purchase_date": null,
+            "warranty": null,
+            "seller": null,
+            "category": null,
+            "customer_name": null,
+            "order_id": null,
+            "invoice_number": null,
+            "selection": "checked",
+            "evidence": null
+        }
+    ]
+}
+
+============================================================
+FIELD RULES
+============================================================
+
+document_type:
+String or null.
+
+product:
+The actual selected/purchased product.
+
+brand:
+Manufacturer / brand.
+
+model:
+Exact model number.
+
+serial_number:
+Exact serial number.
+
+purchase_price:
+Numeric value only.
+Example:
+198.00
+
+NOT:
+"RM 198.00"
+
+currency:
+Currency code/symbol.
+Example:
+"RM"
+
+purchase_date:
+Use ISO format:
+
+YYYY-MM-DD
+
+If date is ambiguous, return null.
+
+warranty:
+Preserve meaningful wording.
+Example:
+"2-YEAR"
+
+seller:
+Seller/dealer/company name.
+
+category:
+Product category.
+
+customer_name:
+Customer name if visible.
+
+order_id:
+Order ID if visible.
+
+invoice_number:
+Invoice number if visible.
+
+selection:
+For included passports this MUST be:
+
+"checked"
+
+evidence:
+Brief explanation of why this product was selected.
+Example:
+"Checkbox beside Small Domestic Appliances is marked."
+
+============================================================
+CRITICAL FINAL CHECK
+============================================================
+
+Before returning JSON:
+
+1. Count the visibly checked product boxes.
+2. Create exactly one passport per checked product.
+3. Do not create passports for unchecked products.
+4. Do not merge multiple products.
+5. Do not invent missing information.
+6. Verify model and serial numbers character-by-character.
+7. Verify handwritten dates carefully.
+8. Return ONLY JSON.
+"""
+
+
+# ============================================================
+# CLEAN AI JSON
+# ============================================================
+
+def extract_json_from_response(text):
+
+    if not text:
+
+        raise ValueError(
+            "Vision model returned empty response."
+        )
+
+    text = text.strip()
+
+    # Remove markdown fences if model accidentally adds them.
+    text = re.sub(
+        r"^```json\s*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"^```\s*",
+        "",
+        text
+    )
+
+    text = re.sub(
+        r"\s*```$",
+        "",
+        text
+    )
+
+    text = text.strip()
+
+    # Direct JSON
+    try:
+
+        return json.loads(
+            text
+        )
+
+    except json.JSONDecodeError:
+
         pass
-    
-def cut_text():
-    """ cut text operation """
-    copy_text()
-    try: text_box.delete(tkinter.SEL_FIRST, tkinter.SEL_LAST)
-    except: pass
-    
-def copy_text():
-    """ copy text operation """
-    root.clipboard_clear()
-    try: root.clipboard_append(text_box.get(tkinter.SEL_FIRST, tkinter.SEL_LAST))
-    except: pass
 
-def paste_text():
-    """ paste text operation """
-    try: text_box.insert(text_box.index('insert'), root.clipboard_get())
-    except: pass
+    # Search for first JSON object.
+    start = text.find("{")
+    end = text.rfind("}")
 
-def clear_text():
-    """ clears the textbox """
-    text_box.delete("1.0","end")
+    if (
+        start != -1
+        and end != -1
+        and end > start
+    ):
 
-      
-if ctk.get_appearance_mode()=="Dark":
-    o = 1
-else:
-    o = 0
-    
-def new_window():
-    # About window 
-    label_header.configure(state="disabled")
-    
-    def exit_top_level():
-        top_level.destroy()
-        label_header.configure(state="normal")
-        
-    def web(link):
-        webbrowser.open_new_tab(link)
-        
-    top_level = ctk.CTkToplevel(root)
-    top_level.protocol("WM_DELETE_WINDOW", exit_top_level)
-    top_level.minsize(400,200)
-    top_level.title("About")
-    top_level.resizable(width=False, height=False)
-    top_level.transient(root)
-    top_level.wm_iconbitmap()
-    top_level.after(200, lambda: top_level.iconphoto(False, icopath))
-    
-    label_top = ctk.CTkLabel(top_level, text="Textemage v1.4", font=("Roboto",15))
-    label_top.grid(padx=20, pady=20, sticky="w")
+        candidate = text[
+            start:end + 1
+        ]
+
+        try:
+
+            return json.loads(
+                candidate
+            )
+
+        except json.JSONDecodeError:
+
+            pass
+
+    raise ValueError(
+        "Could not extract valid JSON from Vision model response.\n"
+        + text
+    )
+
+
+# ============================================================
+# NORMALIZE VALUE
+# ============================================================
+
+def clean_value(value):
+
+    if value is None:
+
+        return None
+
+    if isinstance(
+        value,
+        str
+    ):
+
+        value = value.strip()
+
+        if not value:
+
+            return None
+
+        invalid_values = {
+            "none",
+            "null",
+            "n/a",
+            "na",
+            "not available",
+            "unknown",
+            "not found",
+            "unavailable"
+        }
+
+        if value.lower() in invalid_values:
+
+            return None
+
+        return value
+
+    return value
+
+
+# ============================================================
+# NORMALIZE PASSPORT
+# ============================================================
+
+def normalize_passport(item):
+
+    if not isinstance(
+        item,
+        dict
+    ):
+
+        item = {}
+
+    passport = {
+
+        "document_type":
+            clean_value(
+                item.get("document_type")
+            ),
+
+        "product":
+            clean_value(
+                item.get("product")
+            ),
+
+        "brand":
+            clean_value(
+                item.get("brand")
+            ),
+
+        "model":
+            clean_value(
+                item.get("model")
+            ),
+
+        "serial_number":
+            clean_value(
+                item.get("serial_number")
+            ),
+
+        "purchase_price":
+            clean_value(
+                item.get("purchase_price")
+            ),
+
+        "currency":
+            clean_value(
+                item.get("currency")
+            ),
+
+        "purchase_date":
+            clean_value(
+                item.get("purchase_date")
+            ),
+
+        "warranty":
+            clean_value(
+                item.get("warranty")
+            ),
+
+        "seller":
+            clean_value(
+                item.get("seller")
+            ),
+
+        "category":
+            clean_value(
+                item.get("category")
+            ),
+
+        "customer_name":
+            clean_value(
+                item.get("customer_name")
+            ),
+
+        "order_id":
+            clean_value(
+                item.get("order_id")
+            ),
+
+        "invoice_number":
+            clean_value(
+                item.get("invoice_number")
+            ),
+
+        "selection":
+            "checked",
+
+        "evidence":
+            clean_value(
+                item.get("evidence")
+            )
+    }
+
+    return passport
+
+
+# ============================================================
+# REMOVE DUPLICATES
+# ============================================================
+
+def remove_duplicate_passports(passports):
+
+    unique = []
+
+    seen = set()
+
+    for passport in passports:
+
+        key = (
+
+            str(
+                passport.get(
+                    "product"
+                )
+            ).lower().strip(),
+
+            str(
+                passport.get(
+                    "brand"
+                )
+            ).lower().strip(),
+
+            str(
+                passport.get(
+                    "model"
+                )
+            ).lower().strip(),
+
+            str(
+                passport.get(
+                    "serial_number"
+                )
+            ).lower().strip()
+        )
+
+        if key in seen:
+
+            continue
+
+        seen.add(
+            key
+        )
+
+        unique.append(
+            passport
+        )
+
+    return unique
+
+
+# ============================================================
+# VALIDATE SELECTED PRODUCTS
+# ============================================================
+
+def validate_passports(passports):
+
+    valid = []
+
+    for passport in passports:
+
+        product = passport.get(
+            "product"
+        )
+
+        category = passport.get(
+            "category"
+        )
+
+        # At minimum, a passport must have some product
+        # identity.
+        if not product and not category:
+
+            print(
+                "Skipping passport with no product/category."
+            )
+
+            continue
+
+        # Force selection to checked because this program
+        # only accepts selected products.
+        passport[
+            "selection"
+        ] = "checked"
+
+        valid.append(
+            passport
+        )
+
+    return valid
+
+
+# ============================================================
+# CALL OLLAMA VISION
+# ============================================================
+
+def analyze_image_with_vision(
+    image_path,
+    ocr_text=""
+):
+
+    print()
+    print_separator("=")
+
+    print(
+        "PROCESSING IMAGE + VISION AI"
+    )
+
+    print_separator("=")
+
+    print()
+    print(
+        "Vision model:",
+        MODEL_NAME
+    )
+
+    print(
+        "Sending ORIGINAL IMAGE to vision model..."
+    )
+
+    image_b64 = image_to_base64(
+        image_path
+    )
+
+    # Add OCR only as supplementary evidence.
+    # The original image remains the primary source.
+    supplemental_text = ""
+
+    if ocr_text:
+
+        supplemental_text = """
+
+SUPPLEMENTARY OCR TEXT:
+-----------------------
+""" + ocr_text[:12000] + """
+
+IMPORTANT:
+The OCR text may contain mistakes.
+Always verify against the original image.
+"""
+
+    final_prompt = (
+        VISION_PROMPT
+        + supplemental_text
+    )
+
+    payload = {
+
+        "model": MODEL_NAME,
+
+        "prompt": final_prompt,
+
+        "images": [
+            image_b64
+        ],
+
+        "stream": False,
+
+        "format": "json",
+
+        "options": {
+
+            "temperature": 0.0,
+
+            "top_p": 0.1,
+
+            "num_ctx": 8192
+        }
+    }
 
     try:
-        version = str(pytesseract.get_tesseract_version())[:5]
-    except:
-        version = "Unknown"
-        
-    desc = "Tesseract version: "+version+"\n\nDeveloped by Akash Bora (Akascape) \nLicense: MIT \nCopyright 2023 "
-    label_disc = ctk.CTkLabel(top_level,  text=desc, justify="left", font=("Roboto",12))
-    label_disc.grid(padx=20, pady=0, sticky="w")
-    
-    label_logo = ctk.CTkLabel(top_level, text="", image=logo)
-    label_logo.place(x=230,y=20)
-    
-    link = ctk.CTkLabel(top_level, text="Official Page", justify="left", font=("",13), text_color=("blue", "light blue"))
-    link.grid(padx=20, pady=0, sticky="w")   
-    link.bind("<Enter>", lambda event: link.configure(font=("", 13, "underline"), cursor="hand2"))
-    link.bind("<Leave>", lambda event: link.configure(font=("", 13), cursor="arrow"))
 
-DIRPATH = os.getcwd()
+        response = requests.post(
+
+            OLLAMA_URL,
+
+            json=payload,
+
+            timeout=300
+        )
+
+    except requests.exceptions.ConnectionError:
+
+        raise RuntimeError(
+            "Could not connect to Ollama.\n"
+            "Make sure Ollama is running."
+        )
+
+    except requests.exceptions.Timeout:
+
+        raise RuntimeError(
+            "Ollama timed out while processing the image."
+        )
+
+    if response.status_code != 200:
+
+        raise RuntimeError(
+            "Ollama returned HTTP "
+            + str(response.status_code)
+            + ":\n"
+            + response.text
+        )
+
+    result = response.json()
+
+    raw_response = result.get(
+        "response",
+        ""
+    )
+
+    print()
+    print(
+        "Vision response received."
+    )
+
+    print()
+    print_separator("-")
+
+    print(
+        "RAW VISION JSON:"
+    )
+
+    print_separator("-")
+
+    print(
+        raw_response
+    )
+
+    print_separator("-")
+
+    parsed = extract_json_from_response(
+        raw_response
+    )
+
+    return parsed
 
 
-if os.path.exists(os.path.join(DIRPATH,"tesseract_path.txt")):
-    with open(os.path.join(DIRPATH,"tesseract_path.txt"), 'r') as tfile:
-        patht = tfile.read().strip()
-        pytesseract.pytesseract.tesseract_cmd = patht
-        tfile.close()
-else:
-    pytesseract.pytesseract.tesseract_cmd = "tesseract"
+# ============================================================
+# NORMALIZE MODEL OUTPUT
+# ============================================================
 
-logo = ctk.CTkImage(Image.open(resource("icon.png")), size=(150,150)) 
-frame_1 = ctk.CTkFrame(root)
-frame_1.grid(row=0, column=0, sticky="news", padx=20, pady=20)
-frame_1.rowconfigure(2, weight=1)
-frame_1.columnconfigure(0, weight=1)
+def normalize_model_output(data):
 
-frame_2 = ctk.CTkFrame(root)
-frame_2.grid(row=0, column=1, sticky="news", padx=(0,20), pady=20)
-frame_2.rowconfigure(1, weight=1)
-frame_2.columnconfigure(0, weight=1)
+    passports = []
 
-label_header = ctk.CTkButton(frame_1, text="TEXTEMAGE", fg_color=ctk.ThemeManager.theme["CTkTextbox"]["fg_color"][o],
-                             height=30, command=new_window, hover=False, corner_radius=30,
-                             text_color=ctk.ThemeManager.theme["CTkLabel"]["text_color"][o])
-label_header.grid(padx=10, pady=10)
+    # --------------------------------------------------------
+    # Expected:
+    # {
+    #     "passports": [...]
+    # }
+    # --------------------------------------------------------
 
-open_button = ctk.CTkButton(frame_1, text="OPEN IMAGE SOURCE", command=open_image, corner_radius=30)
-open_button.grid(padx=10, pady=10, sticky="nwe")
+    if isinstance(
+        data,
+        dict
+    ):
 
-image_frame = ctk.CTkFrame(frame_1, corner_radius=20)
-image_frame.grid(padx=10, pady=10, sticky="nwes")
-image_frame.rowconfigure(0, weight=1)
-image_frame.columnconfigure(0, weight=1)
+        if isinstance(
+            data.get("passports"),
+            list
+        ):
 
-label_image = ctk.CTkLabel(image_frame, text="➕", corner_radius=10)
-label_image.grid(padx=10, pady=10, sticky="nwes")
+            passports = data[
+                "passports"
+            ]
 
-#label_image.drop_target_register(DND_FILES)
-#label_image.dnd_bind('<<Drop>>', drop)
+        # Support accidental singular output.
+        elif (
+            "product" in data
+            or "model" in data
+            or "brand" in data
+        ):
 
-image_frame.bind("<Configure>", resize_event)
+            passports = [
+                data
+            ]
 
-convert_button = ctk.CTkButton(frame_1, text="EXTRACT", command=convert, corner_radius=30)
-convert_button.grid(padx=10, pady=10, sticky="we")
+        # Some models may use products.
+        elif isinstance(
+            data.get("products"),
+            list
+        ):
 
-processing_label = ctk.CTkLabel(frame_1, text="Ready", font=("", 11), height=20)
-processing_label.grid(padx=10, pady=(0, 10), sticky="we")
+            passports = data[
+                "products"
+            ]
 
-label_2 = ctk.CTkLabel(frame_2, text="Converted text will be shown here")
-label_2.grid(padx=10, pady=10)
+    elif isinstance(
+        data,
+        list
+    ):
 
-text_box = ctk.CTkTextbox(frame_2)
-text_box.grid(sticky="news", padx=10, pady=10)
-text_box._textbox.configure(selectbackground=root._apply_appearance_mode(open_button._fg_color))
+        passports = data
 
-RightClickMenu = tkinter.Menu(text_box, tearoff=False, fg=ctk.ThemeManager.theme["CTkLabel"]["text_color"][o],
-                              background=ctk.ThemeManager.theme["CTkFrame"]["top_fg_color"][o],
-                              activebackground=root._apply_appearance_mode(open_button._fg_color))
-RightClickMenu.add_command(label="cut", command=cut_text)
-RightClickMenu.add_command(label="copy", command=copy_text)
-RightClickMenu.add_command(label="paste", command=paste_text)
-RightClickMenu.add_command(label="clear", command=clear_text)
-text_box.bind("<Button-3>", lambda event: do_popup(event, frame=RightClickMenu))
+    normalized = []
 
-root.mainloop()
+    for item in passports:
+
+        passport = normalize_passport(
+            item
+        )
+
+        normalized.append(
+            passport
+        )
+
+    normalized = validate_passports(
+        normalized
+    )
+
+    normalized = remove_duplicate_passports(
+        normalized
+    )
+
+    return normalized
+
+
+# ============================================================
+# SAVE PASSPORT JSON
+# ============================================================
+
+def save_passports(
+    passports,
+    image_path
+):
+
+    output = {
+
+        "source_image":
+            os.path.abspath(
+                image_path
+            ),
+
+        "passport_count":
+            len(passports),
+
+        "passports":
+            passports
+    }
+
+    # IMPORTANT:
+    # Write using absolute path.
+    with open(
+        JSON_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            output,
+            f,
+            indent=4,
+            ensure_ascii=False
+        )
+
+        f.flush()
+
+    # Verify that the file actually exists.
+    if not os.path.exists(
+        JSON_FILE
+    ):
+
+        raise RuntimeError(
+            "Passport JSON was not created."
+        )
+
+    # Read it back immediately.
+    with open(
+        JSON_FILE,
+        "r",
+        encoding="utf-8"
+    ) as f:
+
+        verification = json.load(
+            f
+        )
+
+    print()
+    print_separator("=")
+
+    print(
+        "PASSPORT JSON SAVED SUCCESSFULLY"
+    )
+
+    print_separator("=")
+
+    print(
+        "Absolute path:"
+    )
+
+    print(
+        JSON_FILE
+    )
+
+    print()
+    print(
+        "Passport count:",
+        verification.get(
+            "passport_count"
+        )
+    )
+
+    return JSON_FILE
+
+
+# ============================================================
+# PRINT PASSPORTS
+# ============================================================
+
+def print_passports(passports):
+
+    print()
+    print_separator("=")
+
+    print(
+        "GENERATED DIGITAL PRODUCT PASSPORTS"
+    )
+
+    print_separator("=")
+
+    for index, passport in enumerate(
+        passports,
+        start=1
+    ):
+
+        print()
+        print_separator("-")
+
+        print(
+            f"PASSPORT #{index}"
+        )
+
+        print_separator("-")
+
+        print(
+            "Product       :",
+            passport.get(
+                "product"
+            )
+        )
+
+        print(
+            "Brand         :",
+            passport.get(
+                "brand"
+            )
+        )
+
+        print(
+            "Model         :",
+            passport.get(
+                "model"
+            )
+        )
+
+        print(
+            "Serial Number :",
+            passport.get(
+                "serial_number"
+            )
+        )
+
+        price = passport.get(
+            "purchase_price"
+        )
+
+        currency = passport.get(
+            "currency"
+        )
+
+        if price is not None:
+
+            if currency:
+
+                price_display = (
+                    f"{currency} {price}"
+                )
+
+            else:
+
+                price_display = str(
+                    price
+                )
+
+        else:
+
+            price_display = None
+
+        print(
+            "Price         :",
+            price_display
+        )
+
+        print(
+            "Currency      :",
+            currency
+        )
+
+        print(
+            "Purchase Date :",
+            passport.get(
+                "purchase_date"
+            )
+        )
+
+        print(
+            "Warranty      :",
+            passport.get(
+                "warranty"
+            )
+        )
+
+        print(
+            "Seller        :",
+            passport.get(
+                "seller"
+            )
+        )
+
+        print(
+            "Category      :",
+            passport.get(
+                "category"
+            )
+        )
+
+        print(
+            "Selection     :",
+            passport.get(
+                "selection"
+            )
+        )
+
+        print(
+            "Evidence      :",
+            passport.get(
+                "evidence"
+            )
+        )
+
+    print()
+    print_separator("=")
+
+
+# ============================================================
+# FIND PASSPORT UI
+# ============================================================
+
+def find_passport_ui():
+
+    candidates = [
+
+        os.path.join(
+            SCRIPT_DIR,
+            "product_passport.py"
+        ),
+
+        os.path.join(
+            SCRIPT_DIR,
+            "passport.py"
+        ),
+
+        os.path.join(
+            SCRIPT_DIR,
+            "passport_ui.py"
+        ),
+
+        os.path.join(
+            SCRIPT_DIR,
+            "product_passport_ui.py"
+        )
+    ]
+
+    for path in candidates:
+
+        if os.path.isfile(
+            path
+        ):
+
+            return path
+
+    return None
+
+
+# ============================================================
+# LAUNCH PASSPORT UI
+# ============================================================
+
+def launch_passport_ui():
+
+    ui_script = find_passport_ui()
+
+    if ui_script is None:
+
+        print()
+        print(
+            "Passport UI script was not automatically found."
+        )
+
+        print(
+            "JSON is available at:"
+        )
+
+        print(
+            JSON_FILE
+        )
+
+        return False
+
+    print()
+    print_separator("=")
+
+    print(
+        "LAUNCHING PRODUCT PASSPORT UI"
+    )
+
+    print_separator("=")
+
+    print(
+        "UI:",
+        ui_script
+    )
+
+    print(
+        "JSON:",
+        JSON_FILE
+    )
+
+    try:
+
+        # ----------------------------------------------------
+        # IMPORTANT:
+        #
+        # Set the working directory to SCRIPT_DIR.
+        #
+        # This prevents the old problem where the UI looks
+        # for product_passport.json in another directory.
+        # ----------------------------------------------------
+
+        subprocess.Popen(
+
+            [
+                sys.executable,
+                ui_script,
+                JSON_FILE
+            ],
+
+            cwd=SCRIPT_DIR
+        )
+
+        print()
+        print(
+            "Passport UI started."
+        )
+
+        return True
+
+    except Exception as e:
+
+        print()
+        print(
+            "Could not launch Passport UI:"
+        )
+
+        print(
+            e
+        )
+
+        return False
+
+
+# ============================================================
+# SAVE OCR EVIDENCE
+# ============================================================
+
+def save_ocr_evidence(
+    image_path,
+    ocr_text
+):
+
+    evidence = {
+
+        "image":
+            os.path.abspath(
+                image_path
+            ),
+
+        "ocr_text":
+            ocr_text,
+
+        "ocr_available":
+            bool(
+                ocr_text
+            )
+    }
+
+    try:
+
+        with open(
+            EVIDENCE_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                evidence,
+                f,
+                indent=4,
+                ensure_ascii=False
+            )
+
+    except Exception as e:
+
+        print(
+            "Could not save OCR evidence:",
+            e
+        )
+
+
+# ============================================================
+# SELECT IMAGE
+# ============================================================
+
+def select_image():
+
+    root = tk.Tk()
+
+    root.withdraw()
+
+    root.attributes(
+        "-topmost",
+        True
+    )
+
+    image_path = filedialog.askopenfilename(
+
+        title="Select Product / Warranty Document",
+
+        filetypes=[
+
+            (
+                "Image files",
+                "*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff"
+            ),
+
+            (
+                "All files",
+                "*.*"
+            )
+        ]
+    )
+
+    root.destroy()
+
+    return image_path
+
+
+# ============================================================
+# MAIN PIPELINE
+# ============================================================
+
+def main():
+
+    print_title(
+        "TEXTEMAGE - DIGITAL PRODUCT PASSPORT"
+    )
+
+    print(
+        "Working directory:"
+    )
+
+    print(
+        SCRIPT_DIR
+    )
+
+    print()
+
+    # --------------------------------------------------------
+    # 1. CHECK OLLAMA
+    # --------------------------------------------------------
+
+    if not check_ollama():
+
+        messagebox.showerror(
+            "TextEmage",
+            "Ollama is not available.\n\n"
+            f"Make sure {MODEL_NAME} is installed."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # 2. SELECT IMAGE
+    # --------------------------------------------------------
+
+    image_path = select_image()
+
+    if not image_path:
+
+        print(
+            "No image selected."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # 3. INSPECT IMAGE
+    # --------------------------------------------------------
+
+    inspect_image(
+        image_path
+    )
+
+    # --------------------------------------------------------
+    # 4. OPTIONAL OCR
+    # --------------------------------------------------------
+
+    print()
+    print_separator("=")
+
+    print(
+        "STARTING OPTIONAL DOCUMENT OCR"
+    )
+
+    print_separator("=")
+
+    ocr_text = run_optional_tesseract(
+        image_path
+    )
+
+    save_ocr_evidence(
+        image_path,
+        ocr_text
+    )
+
+    # --------------------------------------------------------
+    # 5. VISION AI
+    # --------------------------------------------------------
+
+    try:
+
+        ai_result = analyze_image_with_vision(
+
+            image_path,
+
+            ocr_text
+        )
+
+    except Exception as e:
+
+        print()
+        print_separator("=")
+
+        print(
+            "VISION PROCESSING FAILED"
+        )
+
+        print_separator("=")
+
+        print(
+            str(e)
+        )
+
+        messagebox.showerror(
+            "TextEmage",
+            "Vision processing failed.\n\n"
+            + str(e)
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # 6. NORMALIZE
+    # --------------------------------------------------------
+
+    passports = normalize_model_output(
+        ai_result
+    )
+
+    # --------------------------------------------------------
+    # 7. CHECK RESULT
+    # --------------------------------------------------------
+
+    if not passports:
+
+        print()
+        print_separator("=")
+
+        print(
+            "NO SELECTED PRODUCTS DETECTED"
+        )
+
+        print_separator("=")
+
+        print(
+            "No passport was generated because no selected"
+        )
+
+        print(
+            "product could be confidently identified."
+        )
+
+        messagebox.showwarning(
+            "TextEmage",
+            "No selected/purchased product was detected."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # 8. PRINT
+    # --------------------------------------------------------
+
+    print_passports(
+        passports
+    )
+
+    # --------------------------------------------------------
+    # 9. SAVE
+    # --------------------------------------------------------
+
+    try:
+
+        save_passports(
+
+            passports,
+
+            image_path
+        )
+
+    except Exception as e:
+
+        print()
+        print(
+            "Could not save passport JSON:"
+        )
+
+        print(
+            e
+        )
+
+        messagebox.showerror(
+            "TextEmage",
+            "Could not save passport JSON.\n\n"
+            + str(e)
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # 10. LAUNCH UI
+    # --------------------------------------------------------
+
+    launch_passport_ui()
+
+    # --------------------------------------------------------
+    # FINAL MESSAGE
+    # --------------------------------------------------------
+
+    print()
+    print_separator("=")
+
+    print(
+        "PROCESS COMPLETED"
+    )
+
+    print_separator("=")
+
+    print(
+        f"{len(passports)} passport(s) generated."
+    )
+
+    print()
+
+    print(
+        "JSON:"
+    )
+
+    print(
+        JSON_FILE
+    )
+
+    print_separator("=")
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+
+    main()
