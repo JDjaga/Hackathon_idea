@@ -1480,6 +1480,62 @@ body {
   color: var(--text-secondary);
 }
 
+.evidence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.confidence-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+}
+
+.confidence-pill.conf-high { color: #34d399; border-color: #34d399; }
+.confidence-pill.conf-medium { color: var(--gold-light); }
+.confidence-pill.conf-low,
+.confidence-pill.conf-none { color: #f87171; }
+
+.why-line {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.product-graph {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.product-graph-tree {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.product-graph-tree .graph-root {
+  font-weight: 700;
+  color: var(--gold-light);
+  margin-bottom: 0.35rem;
+}
+
+.product-graph-tree .graph-child {
+  padding-left: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  border-left: 1px solid var(--border-color);
+  margin-left: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
 .message-suggestions {
   margin-top: 0.85rem;
 }

@@ -20,7 +20,7 @@
   <!-- Offline Mode Banner (Hidden by default) -->
   <div id="offline-banner" class="offline-banner hidden">
     <span class="offline-icon">🔒</span>
-    <span><strong>Offline Mode Active:</strong> All AI processing, OCR, and identity matching are running locally on your device NPU.</span>
+    <span><strong>Offline Mode:</strong> OCR, extraction, and household memory are running locally — no cloud required for this scan.</span>
   </div>
 
   <!-- Header / Navigation Bar -->
@@ -117,7 +117,7 @@
         <span class="tab-icon">⚡</span> Identity Matcher
       </button>
       <button class="nav-tab" data-tab="tab-appliance-vision">
-        <span class="tab-icon">👁️</span> Appliance Vision
+        <span class="tab-icon">👁️</span> Point-and-Ask
       </button>
       <button class="nav-tab" data-tab="tab-passport-vault">
         <span class="tab-icon">📦</span> Product Registry
@@ -382,6 +382,12 @@
                 </div>
               </div>
 
+              <!-- Household Product Graph -->
+              <div class="product-graph" id="cert-product-graph" hidden>
+                <span class="evidence-label">Household Product Graph</span>
+                <ul class="product-graph-tree" id="cert-graph-tree"></ul>
+              </div>
+
               <!-- OCR Evidence Text Snippet Drawer -->
               <div class="cert-evidence-box">
                 <span class="evidence-label">Raw Text Evidence Snippet:</span>
@@ -585,7 +591,7 @@
         <!-- Detection Inputs -->
         <div class="card glass-card">
           <div class="card-header">
-            <h2 class="card-title"><span class="title-gold">👁️</span> Appliance Vision</h2>
+            <h2 class="card-title"><span class="title-gold">👁️</span> Point-and-Ask Vision</h2>
             <span class="card-badge">Ultralytics YOLO</span>
           </div>
 
@@ -622,7 +628,7 @@
         <!-- Detection Results with Bounding Box Overlay -->
         <div class="card glass-card">
           <div class="card-header">
-            <h2 class="card-title"><span class="title-gold">📍</span> Object Bounding Boxes</h2>
+            <h2 class="card-title"><span class="title-gold">📍</span> Point-and-Ask</h2>
             <span class="card-badge" id="yolo-count-badge">0 Detected</span>
           </div>
 
@@ -799,9 +805,9 @@
         <div class="camera-target-selector">
           <label class="section-label">Route snapshot to:</label>
           <div class="target-pills">
-            <label class="radio-pill"><input type="radio" name="cam-target" value="smart-capture" checked> <span>Smart Capture</span></label>
-            <label class="radio-pill"><input type="radio" name="cam-target" value="compat-scan"> <span>Compatibility</span></label>
-            <label class="radio-pill"><input type="radio" name="cam-target" value="appliance-vision"> <span>Appliance Vision</span></label>
+            <label class="radio-pill"><input type="radio" name="cam-target" value="smart-capture" checked> <span>Document</span></label>
+            <label class="radio-pill"><input type="radio" name="cam-target" value="appliance-vision"> <span>Point-and-Ask</span></label>
+            <label class="radio-pill"><input type="radio" name="cam-target" value="compat-scan"> <span>Replacement part</span></label>
           </div>
         </div>
 

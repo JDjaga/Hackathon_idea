@@ -112,8 +112,13 @@ def extract_ocr_text(image_path: str) -> Dict[str, Any]:
             text_parts = []
 
             if results:
-                for box, txt, score in results:
-                    cleaned_txt = str(txt).strip()
+                for row in results:
+                    txt = None
+                    if isinstance(row, dict):
+                        txt = row.get("txt") or row.get("text")
+                    elif isinstance(row, (list, tuple)) and len(row) >= 2:
+                        txt = row[1]
+                    cleaned_txt = str(txt or "").strip()
                     if cleaned_txt:
                         lines.append(cleaned_txt)
                         text_parts.append(cleaned_txt)

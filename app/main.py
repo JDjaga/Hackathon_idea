@@ -78,6 +78,7 @@ async def health_check():
         "diagnostics": {
             "ollama_online": ollama_status["online"],
             "has_vision_model": ollama_status["has_vision_model"],
+            "has_text_model": ollama_status.get("has_text_model", False),
             "vision_model": ollama_status["vision_model"],
             "ocr_available": ocr_status,
             "ocr_engine": get_ocr_engine_name(),

@@ -19,12 +19,12 @@ from app.config import (
     YOLO_CONFIDENCE,
     YOLO_IOU,
     YOLO_IMAGE_SIZE,
-    MIN_PRODUCT_CONFIDENCE,
     APPLIANCE_CLASSES,
     REJECT_CLASSES,
     OLLAMA_GENERATE_URL,
     VISION_MODEL
 )
+from app.core.dpp_extractor import clean_json_response
 
 _YOLO_MODEL = None
 
@@ -116,31 +116,43 @@ Return ONLY a valid JSON array of objects:
         res = requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=20.0)
         if res.status_code == 200:
             raw = res.json().get("response", "")
-            import re
-            match = re.search(r"\[.*\]", raw, re.DOTALL)
-            if match:
-                items = json.loads(match.group(0))
+            parsed = clean_json_response(raw)
+            items = parsed if isinstance(parsed, list) else parsed.get("passports") or parsed.get("detections")
+            if isinstance(parsed, dict) and isinstance(parsed.get("detections"), list):
+                items = parsed["detections"]
+            if isinstance(items, list) and items:
+                out = []
                 for item in items:
+                    if not isinstance(item, dict):
+                        continue
                     item["source"] = "vlm_semantic_fallback"
-                return items
+                    out.append(item)
+                if out:
+                    return out
     except Exception:
         pass
 
-    # Heuristic fallback based on filename if VLM is offline
     filename = Path(image_path).name.lower()
-    label = "Home Appliance"
-    if "wash" in filename or "img.jpg" in filename:
+    label = None
+    if "wash" in filename:
         label = "Washing Machine"
-    elif "micro" in filename or "img3.jpg" in filename:
-        label = "Microwave Oven"
-    elif "fridge" in filename:
+    elif "micro" in filename:
+        label = "Microwave"
+    elif "fridge" in filename or "refrigerat" in filename:
         label = "Refrigerator"
+    elif "purifier" in filename:
+        label = "Air Purifier"
+    elif "ac" in filename or "aircond" in filename:
+        label = "Air Conditioner"
+
+    if not label:
+        return []
 
     return [{
         "label": label,
-        "confidence": 0.88,
-        "description": "Detected via visual feature analysis",
-        "source": "heuristic_fallback"
+        "confidence": 0.35,
+        "description": "Weak filename hint only — not a visual model result.",
+        "source": "filename_hint"
     }]
 
 
@@ -189,16 +201,16 @@ def detect_appliances(image_path: str, annotate: bool = True) -> Dict[str, Any]:
 
                     if label in REJECT_CLASSES:
                         continue
+                    if label not in APPLIANCE_CLASSES:
+                        continue
 
-                    # Check if appliance or general object
-                    if conf >= MIN_PRODUCT_CONFIDENCE or label in APPLIANCE_CLASSES:
-                        coords = [int(v) for v in box.xyxy[0].tolist()]
-                        detections.append({
-                            "label": label.title(),
-                            "confidence": round(conf, 3),
-                            "box": coords,
-                            "source": "yolo"
-                        })
+                    coords = [int(v) for v in box.xyxy[0].tolist()]
+                    detections.append({
+                        "label": label.title(),
+                        "confidence": round(conf, 3),
+                        "box": coords,
+                        "source": "yolo"
+                    })
         except Exception as e:
             print(f"[ProductDetector] YOLO inference error: {e}")
 

@@ -209,14 +209,30 @@ def match_passport(
     else:
         confidence = "low"
 
-    # If ANY compared identity field disagreed, it is a conflict
-    status = "conflict" if match_res["conflicting_fields"] else "verified"
+    matched_fields = match_res["matched_fields"]
+    has_identity_key = "serial_number" in matched_fields or "model" in matched_fields
+
+    # Conflicts on compared identity fields always flag conflict
+    if match_res["conflicting_fields"]:
+        status = "conflict"
+    elif has_identity_key:
+        status = "verified"
+    else:
+        # Brand + seller alone is too weak to claim the same physical product
+        return {
+            "status": "new_product",
+            "matched_passport_id": None,
+            "match_confidence": None,
+            "matched_fields": [],
+            "conflicting_fields": [],
+            "score": best_score,
+        }
 
     return {
         "status": status,
         "matched_passport_id": passport_id,
         "match_confidence": confidence,
-        "matched_fields": match_res["matched_fields"],
+        "matched_fields": matched_fields,
         "conflicting_fields": match_res["conflicting_fields"],
         "score": best_score
     }

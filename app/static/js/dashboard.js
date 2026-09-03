@@ -34,7 +34,8 @@ const state = {
   samples: {},
   recognition: null,
   cameraStream: null,
-  cameraFacingMode: 'environment'
+  cameraFacingMode: 'environment',
+  askScopePassportId: null
 };
 
 /* ============================================================
@@ -322,6 +323,11 @@ window.askPreset = function(query) {
   sendAskQuery(query);
 };
 
+window.askAboutProduct = function(passportId, query) {
+  state.askScopePassportId = passportId;
+  askPreset(query);
+};
+
 async function sendAskQuery(query) {
   const container = document.getElementById('chat-messages-container');
   const input = document.getElementById('ask-input');
@@ -347,7 +353,10 @@ async function sendAskQuery(query) {
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({
+        query,
+        passport_id: state.askScopePassportId || undefined
+      })
     });
 
     const data = await res.json();
@@ -358,8 +367,13 @@ async function sendAskQuery(query) {
     formattedAnswer = formattedAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
     let sourcesHtml = '';
+    if (data.why || data.confidence) {
+      sourcesHtml += `<div class="evidence-meta"><span class="confidence-pill conf-${data.confidence || 'none'}">${(data.confidence || 'none').toUpperCase()}</span>`;
+      if (data.why) sourcesHtml += `<span class="why-line">${data.why}</span>`;
+      sourcesHtml += '</div>';
+    }
     if (data.sources && data.sources.length) {
-      sourcesHtml = '<div class="message-sources"><span class="sources-title">🛡️ Grounded Sources:</span><ul>';
+      sourcesHtml += '<div class="message-sources"><span class="sources-title">Sources:</span><ul>';
       data.sources.forEach(s => {
         sourcesHtml += `<li><strong>${s.title}</strong> ${s.field ? `(${s.field})` : ''}</li>`;
       });
@@ -570,12 +584,20 @@ async function executeDppExtraction() {
       body: formData
     });
 
-    if (!res.ok) throw new Error('Extraction failed');
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Extraction failed');
 
     const data = await res.json();
     loading.classList.add('hidden');
     certResult.classList.remove('hidden');
-    badge.textContent = 'Extracted';
+    badge.textContent = data.status === 'incomplete' ? 'Incomplete' : 'Extracted';
+
+    if (data.status === 'incomplete' || !data.results || !data.results.length) {
+      showToast(data.message || 'Could not create a household product from this scan.');
+      document.getElementById('cert-verification-title').textContent = 'Nothing stored';
+      document.getElementById('cert-verification-desc').textContent = data.message || 'Unreadable scan.';
+      renderProductGraph(null);
+      return;
+    }
 
     if (data.results && data.results.length) {
       const stored = data.results[0];
@@ -583,14 +605,13 @@ async function executeDppExtraction() {
       const match = stored.identity_match;
       state.activePassportData = passport;
 
-      renderCertificate(passport, match, data.raw_ocr_snippet);
-      
-      if (stored.action === 'linked') {
-        showToast(`🔗 Auto-linked to existing product: ${passport.brand} ${passport.product}`);
-      } else {
-        showToast(`Digital Product Passport created: ${passport.product || 'Product'}`);
+      renderCertificate(passport, match, data.raw_ocr_snippet, stored);
+
+      if (stored.duplicate_warning) {
+        showToast(stored.duplicate_warning);
       }
-      
+      showToast(stored.message || data.message || `Household product: ${passport.product || 'Product'}`);
+
       fetchHouseholdHealth();
       fetchVaultPassports();
     }
@@ -605,7 +626,30 @@ async function executeDppExtraction() {
   }
 }
 
-function renderCertificate(p, match, ocrSnippet) {
+function renderProductGraph(graph) {
+  const wrap = document.getElementById('cert-product-graph');
+  const tree = document.getElementById('cert-graph-tree');
+  if (!wrap || !tree) return;
+  if (!graph || !graph.children || !graph.children.length) {
+    wrap.hidden = true;
+    tree.innerHTML = '';
+    return;
+  }
+  wrap.hidden = false;
+  tree.innerHTML = '';
+  const root = document.createElement('li');
+  root.className = 'graph-root';
+  root.textContent = `${graph.root}${graph.model ? ' · ' + graph.model : ''}`;
+  tree.appendChild(root);
+  graph.children.forEach((child) => {
+    const li = document.createElement('li');
+    li.className = 'graph-child';
+    li.textContent = `${child.kind === 'document' ? '📄' : '📅'} ${child.label}${child.detail ? ' — ' + child.detail : ''}`;
+    tree.appendChild(li);
+  });
+}
+
+function renderCertificate(p, match, ocrSnippet, stored) {
   document.getElementById('cert-product').textContent = p.product || 'Unknown Product';
   document.getElementById('cert-brand').textContent = p.brand || 'Unknown Brand';
   document.getElementById('cert-id').textContent = p.passport_id || 'PP-TEMP';
@@ -623,26 +667,27 @@ function renderCertificate(p, match, ocrSnippet) {
 
   document.getElementById('cert-ocr-snippet').textContent = ocrSnippet || 'No OCR text extracted.';
 
-  // Banner status
+  renderProductGraph((stored && stored.product_graph) || p.product_graph);
+
   const banner = document.getElementById('cert-verification-banner');
   const title = document.getElementById('cert-verification-title');
   const desc = document.getElementById('cert-verification-desc');
 
+  const action = stored && stored.action;
   const status = (match && match.status) || 'new_product';
   banner.className = 'cert-verification-banner ' + status;
 
-  if (status === 'verified') {
-    title.textContent = 'Identity Verified & Linked';
-    desc.textContent = `Matched canonical product (${match.matched_passport_id}) with high confidence.`;
+  if (action === 'linked' || status === 'verified') {
+    title.textContent = 'I linked this document to an existing household product';
+    desc.textContent = stored && stored.message ? stored.message : `Matched ${p.brand} ${p.product}.`;
   } else if (status === 'conflict') {
-    title.textContent = 'Identity Conflict Flagged';
-    desc.textContent = `Serial/Model discrepancy with stored product ${match.matched_passport_id}.`;
+    title.textContent = 'Identity conflict — not auto-merged';
+    desc.textContent = `Serial/model disagrees with stored product ${match.matched_passport_id}.`;
   } else {
-    title.textContent = 'Original Household Registration';
-    desc.textContent = 'First canonical mint for this serial number.';
+    title.textContent = 'I created a household product from these documents';
+    desc.textContent = stored && stored.message ? stored.message : 'First registration for this identity.';
   }
 
-  // Setup buttons
   document.getElementById('btn-save-passport').onclick = () => switchToTab('tab-passport-vault');
   document.getElementById('btn-export-json').onclick = () => downloadSinglePassportJson(p);
 }
@@ -1056,7 +1101,7 @@ async function executeApplianceDetection() {
     countBadge.textContent = `${data.count} Detected`;
 
     renderDetectionCards(data.detections || []);
-    showToast(`YOLO detected ${data.count} appliance(s)`);
+    showToast(`Recognized ${data.count} appliance(s)`);
 
   } catch (err) {
     loading.classList.add('hidden');
@@ -1080,26 +1125,30 @@ function renderDetectionCards(detections) {
 
     // Point-and-Ask Matching: cross-reference detected label with registered household appliances
     const labelLower = d.label.toLowerCase();
-    const matchedProduct = state.vaultPassports.find(p => {
+    const matchedProduct = d.matched_product || state.vaultPassports.find(p => {
       const pName = (p.product || '').toLowerCase();
       return pName.includes(labelLower) || (labelLower === 'washer' && pName.includes('washing'));
     });
 
     let pointAskHtml = '';
     if (matchedProduct) {
+      const pid = matchedProduct.passport_id;
       pointAskHtml = `
         <div class="point-ask-box" style="margin-top:0.75rem; padding:0.75rem; background:rgba(245, 158, 11, 0.1); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
-          <span style="font-size:0.8rem; font-weight:700; color:var(--gold-light);">📷 RECOGNIZED HOUSEHOLD PRODUCT:</span>
-          <p style="font-size:0.9rem; font-weight:600; margin:0.25rem 0;">${matchedProduct.brand} ${matchedProduct.product} (${matchedProduct.room})</p>
+          <span style="font-size:0.8rem; font-weight:700; color:var(--gold-light);">RECOGNIZED HOUSEHOLD PRODUCT</span>
+          <p style="font-size:0.9rem; font-weight:600; margin:0.25rem 0;">${matchedProduct.brand} ${matchedProduct.product} (${matchedProduct.room || ''})</p>
           <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.5rem;">
-            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="askPreset('When does my ${matchedProduct.product} warranty expire?')">
-              💬 Warranty Expiry?
+            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="askAboutProduct('${pid}', 'When does my ${String(matchedProduct.product || '').replace(/'/g, '')} warranty expire?')">
+              Warranty?
             </button>
-            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="askPreset('When was my ${matchedProduct.product} last serviced?')">
-              💬 Service History?
+            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="askAboutProduct('${pid}', 'When was my ${String(matchedProduct.product || '').replace(/'/g, '')} last serviced?')">
+              Last serviced?
             </button>
-            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openServicePassModal('${matchedProduct.passport_id}')">
-              ⚡ Service Pass (QR)
+            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="askAboutProduct('${pid}', 'How old is my ${String(matchedProduct.product || '').replace(/'/g, '')}?')">
+              How old?
+            </button>
+            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openServicePassModal('${pid}')">
+              Service Pass
             </button>
           </div>
         </div>
@@ -1226,6 +1275,8 @@ window.deletePassport = async function(passportId) {
   } catch (err) {
     showToast(`Delete error: ${err.message}`);
   }
+};
+
 window.resetDemoData = async function() {
   if (!confirm('Reset household registry back to canonical golden demo products?')) return;
 
@@ -1307,6 +1358,7 @@ window.viewPassportModal = async function(passportId) {
           <div class="cert-field"><span class="field-label">Merchant / Seller</span><span class="field-value">${p.seller || '—'}</span></div>
         </div>
         ${docsHtml}
+        ${p.product_graph && p.product_graph.children && p.product_graph.children.length ? `<div class="product-graph"><span class="evidence-label">Household Product Graph</span><ul class="product-graph-tree">${['<li class="graph-root">' + (p.product_graph.root || '') + '</li>'].concat((p.product_graph.children || []).map(c => '<li class="graph-child">' + (c.label || '') + (c.detail ? ' — ' + c.detail : '') + '</li>')).join('')}</ul></div>` : ''}
         <div class="cert-actions" style="margin-top:1.5rem;">
           <button class="btn btn-primary" onclick="openServicePassModal('${p.passport_id}')">
             <span>⚡</span> Open Service Pass (QR)
@@ -1413,7 +1465,7 @@ function initOfflineDetector() {
   function updateStatus() {
     if (!navigator.onLine) {
       if (banner) banner.classList.remove('hidden');
-      showToast('🔒 Offline Mode — Device NPU active');
+      showToast('Offline — local OCR and household memory only (no cloud).');
     } else {
       if (banner) banner.classList.add('hidden');
     }

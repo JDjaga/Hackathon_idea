@@ -9,7 +9,6 @@ import io
 import csv
 import json
 import base64
-import tempfile
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form, Response
@@ -17,7 +16,7 @@ from pydantic import BaseModel
 
 import qrcode
 
-from app.config import DATA_DIR
+from app.core.io_utils import write_upload_bytes
 from app.core.passport_store import get_passport_store
 from app.core.household_engine import (
     compute_product_health,
@@ -202,11 +201,11 @@ async def scan_compatibility(
     tmp_path = None
     try:
         if file and file.filename:
-            suffix = os.path.splitext(file.filename)[1] or ".jpg"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=str(DATA_DIR)) as tmp:
-                content = await file.read()
-                tmp.write(content)
-                tmp_path = tmp.name
+            content = await file.read()
+            try:
+                tmp_path = write_upload_bytes(content, file.filename)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
         products = store.get_all()
         verdict = evaluate_compatibility(

@@ -4,10 +4,10 @@ Evaluates replacement parts, consumables (filters, remotes, batteries, vacuum ba
 and accessories against the user's Household Product Graph with grounded confidence scores.
 """
 
-import re
 from typing import Dict, Any, List, Optional
+from app.core.household_match import find_similar_owned_products
 from app.core.ocr_engine import extract_ocr_text
-from app.core.normalizers import normalize_model_number, clean_str
+from app.core.normalizers import normalize_model_number
 
 
 # Appliance consumable keyword affinities
@@ -103,51 +103,35 @@ def evaluate_compatibility(
             best_match = product
             match_evidence = "; ".join(reasons)
 
-    # Check for duplicate item warning
     duplicate_warning = None
     if best_match:
-        same_category_count = sum(
-            1 for p in products
-            if str(p.get("product", "")).lower() == str(best_match.get("product", "")).lower()
+        similar = find_similar_owned_products(
+            best_match,
+            products,
+            exclude_id=best_match.get("passport_id"),
         )
-        if same_category_count > 1:
-            duplicate_warning = f"Note: You have {same_category_count} registered {best_match.get('product')}s in your home."
+        if similar:
+            names = ", ".join(f"{s.get('brand')} {s.get('product')}" for s in similar[:3])
+            duplicate_warning = (
+                f"Similar item already registered ({len(similar)}): {names}."
+            )
 
     # Verdict generation based on confidence
     confidence = min(round(best_score, 2), 0.98)
 
     if confidence >= 0.70:
-        return {
-            "compatible": True,
-            "status": "verified_compatible",
-            "confidence": confidence,
-            "matched_product": {
-                "passport_id": best_match.get("passport_id"),
-                "product": best_match.get("product"),
-                "brand": best_match.get("brand"),
-                "model": best_match.get("model"),
-                "room": best_match.get("room", "Unassigned")
-            },
-            "evidence": f"Model & brand compatibility confirmed: {match_evidence}.",
-            "recommendation": f"✅ Compatible: Safe to purchase for your {best_match.get('brand')} {best_match.get('product')} in the {best_match.get('room', 'home')}.",
-            "duplicate_warning": duplicate_warning
-        }
+        status = "verified_compatible"
+        compatible = True
+        recommendation = (
+            f"Compatible: Safe to purchase for your {best_match.get('brand')} "
+            f"{best_match.get('product')} in the {best_match.get('room', 'home')}."
+        )
+        evidence = f"Model & brand compatibility confirmed: {match_evidence}."
     elif confidence >= 0.40:
-        return {
-            "compatible": True,
-            "status": "likely_compatible",
-            "confidence": confidence,
-            "matched_product": {
-                "passport_id": best_match.get("passport_id"),
-                "product": best_match.get("product"),
-                "brand": best_match.get("brand"),
-                "model": best_match.get("model"),
-                "room": best_match.get("room", "Unassigned")
-            },
-            "evidence": f"Partial compatibility match: {match_evidence}.",
-            "recommendation": "⚠️ Likely compatible, but check physical connector/dimensions before unsealing packaging.",
-            "duplicate_warning": duplicate_warning
-        }
+        status = "likely_compatible"
+        compatible = True
+        recommendation = "Likely compatible, but check physical connector/dimensions before unsealing packaging."
+        evidence = f"Partial compatibility match: {match_evidence}."
     else:
         return {
             "compatible": False,
@@ -155,6 +139,24 @@ def evaluate_compatibility(
             "confidence": confidence,
             "matched_product": None,
             "evidence": "No registered household appliance matches this part model or manufacturer specification.",
-            "recommendation": "❌ Cannot verify compatibility. No matching registered appliance found in your household.",
-            "duplicate_warning": None
+            "recommendation": "Cannot verify compatibility. Do not purchase yet — no reliable model-specific match was found.",
+            "why": "No model/brand/consumable affinity scored above the verification threshold.",
+            "duplicate_warning": duplicate_warning if confidence > 0 else None,
         }
+
+    return {
+        "compatible": compatible,
+        "status": status,
+        "confidence": confidence,
+        "matched_product": {
+            "passport_id": best_match.get("passport_id"),
+            "product": best_match.get("product"),
+            "brand": best_match.get("brand"),
+            "model": best_match.get("model"),
+            "room": best_match.get("room", "Unassigned"),
+        },
+        "evidence": evidence,
+        "recommendation": recommendation,
+        "why": match_evidence or "Scored against household product graph.",
+        "duplicate_warning": duplicate_warning,
+    }

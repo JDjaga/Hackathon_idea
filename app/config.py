@@ -87,11 +87,13 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
 OLLAMA_TAGS_URL = f"{OLLAMA_HOST}/api/tags"
 
-VISION_MODEL = os.environ.get("VISION_MODEL", "qwen2.5vl:7b")
-TEXT_MODEL = os.environ.get("TEXT_MODEL", "llama3.2:latest")
+VISION_MODEL = os.environ.get("VISION_MODEL", "qwen3-vl:8b")
+TEXT_MODEL = os.environ.get("TEXT_MODEL", "qwen3-vl:8b")
 
-# Timeout for local LLM requests in seconds
-OLLAMA_TIMEOUT = 120.0
+# Timeout for document VLM extraction
+OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", 120.0))
+# Timeout for Ask My House local LLM (seconds)
+ASK_LLM_TIMEOUT = float(os.environ.get("ASK_LLM_TIMEOUT", 45.0))
 
 # ============================================================
 # YOLO OBJECT DETECTION

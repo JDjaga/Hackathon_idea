@@ -1,5 +1,5 @@
 """
-AI Product Guardian — Digital Product Passport & Appliance Intelligence Platform
+HomeMind — Household Intelligence
 """
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"

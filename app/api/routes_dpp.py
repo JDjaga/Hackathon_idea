@@ -1,22 +1,20 @@
 """
-AI Product Guardian — Digital Product Passport API Routes
-Handles document extraction, passport persistence, search, stats, and conflict listing.
+HomeMind — Digital Product Passport API Routes
 """
 
 import os
-import tempfile
-from typing import Optional, List, Dict, Any
+from typing import Optional, Any
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.config import DATA_DIR
 from app.core.passport_store import get_passport_store
-from app.core.dpp_extractor import extract_document_dpp
+from app.core.dpp_extractor import extract_document_dpp, is_usable_passport, found_fields_checklist
+from app.core.household_match import build_product_graph, find_similar_owned_products
+from app.core.io_utils import resolve_sample_path, write_upload_bytes
 
 router = APIRouter(prefix="/api/dpp", tags=["Digital Product Passports"])
 store = get_passport_store()
 
-# Ensure demo data is seeded if empty
 store.seed_demo_passports()
 
 
@@ -36,49 +34,90 @@ class PassportInputSchema(BaseModel):
     order_id: Optional[str] = None
     invoice_number: Optional[str] = None
     selection_evidence: Optional[str] = None
+    room: Optional[str] = None
 
 
 @router.post("/extract")
 async def extract_passport_from_document(
     file: Optional[UploadFile] = File(None),
-    sample_path: Optional[str] = Form(None)
+    sample_path: Optional[str] = Form(None),
+    room: Optional[str] = Form(None),
 ):
-    """
-    Extract Digital Product Passport(s) from an uploaded document or sample image path.
-    Runs OCR + VLM Checkbox Reasoning, normalizes data, and automatically links/verifies against database.
-    """
     tmp_path = None
     try:
         if file and file.filename:
-            suffix = os.path.splitext(file.filename)[1] or ".jpg"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=str(DATA_DIR)) as tmp:
-                content = await file.read()
-                tmp.write(content)
-                tmp_path = tmp.name
+            content = await file.read()
+            try:
+                tmp_path = write_upload_bytes(content, file.filename)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
             target_image = tmp_path
-        elif sample_path and os.path.isfile(sample_path):
-            target_image = sample_path
+        elif sample_path:
+            try:
+                target_image = str(resolve_sample_path(sample_path))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except FileNotFoundError as e:
+                raise HTTPException(status_code=400, detail=str(e))
         else:
             raise HTTPException(status_code=400, detail="Must provide an image file upload or valid sample_path.")
 
-        # Run extraction pipeline
         extraction_result = extract_document_dpp(target_image)
         extracted_passports = extraction_result.get("passports", [])
 
-        # Store each extracted passport into the local database
         stored_results = []
         for p in extracted_passports:
+            if not is_usable_passport(p):
+                continue
+            if room:
+                p["room"] = room
             res = store.add_passport(p, source="document_extractor")
+            passport = res.get("passport") or {}
+            similar = find_similar_owned_products(
+                passport,
+                store.get_all(),
+                exclude_id=passport.get("passport_id"),
+            )
+            res["product_graph"] = build_product_graph(passport)
+            res["found_fields"] = found_fields_checklist(passport)
+            res["duplicate_warning"] = (
+                f"Similar item already registered: "
+                + ", ".join(f"{s.get('brand')} {s.get('product')}" for s in similar[:3])
+                if similar else None
+            )
+            res["message"] = res.get("message") or (
+                f"I created a household product from this {extraction_result.get('document_type') or 'document'}."
+                if res.get("action") == "created"
+                else f"I linked this document to {passport.get('brand')} {passport.get('product')}."
+            )
             stored_results.append(res)
+
+        if not stored_results:
+            return {
+                "status": "incomplete",
+                "extraction_source": extraction_result.get("extraction_source"),
+                "document_type": extraction_result.get("document_type"),
+                "ollama_online": extraction_result.get("ollama_online"),
+                "ocr_available": extraction_result.get("ocr_available"),
+                "passport_count": 0,
+                "results": [],
+                "raw_ocr_snippet": extraction_result.get("ocr_text", "")[:300],
+                "extraction_confidence": extraction_result.get("extraction_confidence"),
+                "found_fields": extraction_result.get("found_fields"),
+                "message": "I could not create a household product from this scan. No product, model, or serial was readable. Try a closer photo or better lighting.",
+            }
 
         return {
             "status": "success",
             "extraction_source": extraction_result.get("extraction_source"),
+            "document_type": extraction_result.get("document_type"),
             "ollama_online": extraction_result.get("ollama_online"),
             "ocr_available": extraction_result.get("ocr_available"),
             "passport_count": len(stored_results),
             "results": stored_results,
-            "raw_ocr_snippet": extraction_result.get("ocr_text", "")[:300]
+            "raw_ocr_snippet": extraction_result.get("ocr_text", "")[:300],
+            "extraction_confidence": extraction_result.get("extraction_confidence"),
+            "message": stored_results[0].get("message"),
         }
 
     except HTTPException:
@@ -100,7 +139,6 @@ async def list_passports(
     model: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="'verified', 'conflict', or 'new_product'")
 ):
-    """Retrieve all passports with optional multi-attribute filtering."""
     results = store.search(query=q, brand=brand, model=model, status=status)
     return {
         "count": len(results),
@@ -110,13 +148,11 @@ async def list_passports(
 
 @router.get("/passports/stats")
 async def get_passport_stats():
-    """Get registry statistics (totals, conflicts, verified, brand counts)."""
     return store.stats()
 
 
 @router.get("/passports/conflicts")
 async def get_passport_conflicts():
-    """Retrieve all passports with flagged identity conflicts."""
     conflicts = store.get_conflicts()
     return {
         "count": len(conflicts),
@@ -126,23 +162,22 @@ async def get_passport_conflicts():
 
 @router.get("/passports/{passport_id}")
 async def get_single_passport(passport_id: str):
-    """Get a single Digital Product Passport by ID."""
     passport = store.get_by_id(passport_id)
     if not passport:
         raise HTTPException(status_code=404, detail="Passport not found")
-    return passport
+    payload = dict(passport)
+    payload["product_graph"] = build_product_graph(passport)
+    return payload
 
 
 @router.post("/passports")
 async def create_passport(passport: PassportInputSchema):
-    """Manually add a Digital Product Passport to the store with identity verification."""
     result = store.add_passport(passport.model_dump(exclude_none=True), source="manual_api")
     return result
 
 
 @router.delete("/passports/{passport_id}")
 async def delete_passport(passport_id: str):
-    """Delete a passport from the database."""
     deleted = store.delete(passport_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Passport not found")

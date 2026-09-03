@@ -97,7 +97,7 @@ def run_cli_menu():
             ocr = is_ocr_available()
             print(f"\nDiagnostics:")
             print(f"-> Ollama Host: {ollama['host']} (Online: {ollama['online']}, Vision Model: {ollama['has_vision_model']})")
-            print(f"-> Tesseract OCR: {'Available' if ocr else 'Not Installed (Graceful Fallback)'}")
+            print(f"-> OCR Engine: RapidOCR/Tesseract ({'Available' if ocr else 'Not Installed — OCR-only fields will be empty'})")
 
         elif choice == "5":
             break

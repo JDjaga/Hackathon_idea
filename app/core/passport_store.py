@@ -117,7 +117,7 @@ class PassportStore:
             match_result = match_passport(norm_data, self.passports)
             norm_data["identity_match"] = match_result
 
-            # Document Auto-Linking: If verified match with existing product, link document into existing entity
+            # Document Auto-Linking: verified matches require model or serial (see identity_matcher)
             if auto_link and match_result.get("status") == "verified" and match_result.get("matched_passport_id"):
                 matched_id = match_result["matched_passport_id"]
                 existing_p = self.get_by_id(matched_id)

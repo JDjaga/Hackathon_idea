@@ -85,6 +85,21 @@ class TestIdentityMatcher(unittest.TestCase):
         self.assertEqual(res["status"], "verified")
         self.assertEqual(res["matched_passport_id"], "PP-001")
 
+    def test_match_requires_model_or_serial(self):
+        existing = [{
+            "passport_id": "PP-001",
+            "brand": "LG",
+            "seller": "Best Electrical Store",
+            "purchase_date": "2026-08-12",
+        }]
+        candidate = {
+            "brand": "LG",
+            "seller": "Best Electrical Store",
+            "purchase_date": "2026-08-12",
+        }
+        res = match_passport(candidate, existing)
+        self.assertEqual(res["status"], "new_product")
+
 
 if __name__ == "__main__":
     unittest.main()
