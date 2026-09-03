@@ -159,8 +159,7 @@ class TestHouseholdIntelligence(unittest.TestCase):
             "brand": target.get("brand"),
             "model": target.get("model"),
             "serial_number": target.get("serial_number"),
-            "purchase_price": target.get("purchase_price"),
-            "seller": "Authorized Service Center"
+            "purchase_price": target.get("purchase_price")
         }
         res = store.add_passport(new_doc, source="camera_test", auto_link=True)
         self.assertEqual(res["action"], "linked")
