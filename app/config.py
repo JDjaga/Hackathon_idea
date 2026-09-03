@@ -87,7 +87,7 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
 OLLAMA_TAGS_URL = f"{OLLAMA_HOST}/api/tags"
 
-VISION_MODEL = os.environ.get("VISION_MODEL", "llama3.2-vision:11b")
+VISION_MODEL = os.environ.get("VISION_MODEL", "qwen3-vl:8b")
 TEXT_MODEL = os.environ.get("TEXT_MODEL", "gemma2:2b")
 
 # Timeout for document VLM extraction
