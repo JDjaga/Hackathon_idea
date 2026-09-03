@@ -654,9 +654,14 @@
             <h2 class="card-title"><span class="title-gold">📦</span> Household Product Registry</h2>
             <p class="card-subtitle">Canonical list of all registered household appliances, warranties, and room assignments.</p>
           </div>
-          <button class="btn btn-secondary" id="btn-refresh-vault">
-            <span>🔄</span> Refresh
-          </button>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-secondary" id="btn-reset-demo" onclick="resetDemoData()" title="Reset to golden demo products">
+              <span>✨</span> Reset Demo
+            </button>
+            <button class="btn btn-secondary" id="btn-refresh-vault">
+              <span>🔄</span> Refresh
+            </button>
+          </div>
         </div>
 
         <!-- Filter and Search Toolbar -->

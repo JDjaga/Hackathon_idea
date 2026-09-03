@@ -300,12 +300,15 @@ class PassportStore:
                 "unique_categories": len(categories)
             }
 
-    def seed_demo_passports(self) -> None:
-        """Seed high-fidelity HomeMind demo products if store is completely empty."""
+    def seed_demo_passports(self, force: bool = False) -> None:
+        """Seed high-fidelity HomeMind demo products if store is completely empty or forced."""
         with self._lock:
             self._sync()
-            if self.passports:
+            if self.passports and not force:
                 return
+
+            if force:
+                self.passports = []
 
             demo_data = [
                 {
@@ -420,6 +423,12 @@ class PassportStore:
 
             self.passports.extend(demo_data)
             self.save()
+
+    def reset_to_demo(self) -> List[Dict[str, Any]]:
+        """Reset the household store back to canonical golden demo products."""
+        self.seed_demo_passports(force=True)
+        return self.passports
+
 
 
 # Singleton Instance Factory

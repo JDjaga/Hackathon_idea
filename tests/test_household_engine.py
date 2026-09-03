@@ -192,6 +192,13 @@ class TestHouseholdIntelligence(unittest.TestCase):
         self.assertEqual(sw_res.status_code, 200)
         self.assertIn("homemind-v3", sw_res.text)
 
+    def test_reset_demo_data(self):
+        res = self.client.post("/api/household/reset-demo")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["status"], "success")
+        self.assertGreaterEqual(data["product_count"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

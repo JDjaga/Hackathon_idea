@@ -1226,6 +1226,18 @@ window.deletePassport = async function(passportId) {
   } catch (err) {
     showToast(`Delete error: ${err.message}`);
   }
+window.resetDemoData = async function() {
+  if (!confirm('Reset household registry back to canonical golden demo products?')) return;
+
+  try {
+    const res = await fetch('/api/household/reset-demo', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to reset demo data');
+    showToast('✨ Household memory reset to clean demo state!');
+    fetchVaultPassports();
+    fetchHouseholdHealth();
+  } catch (err) {
+    showToast(`Reset error: ${err.message}`);
+  }
 };
 
 window.downloadClaimPack = async function(passportId) {

@@ -322,3 +322,19 @@ async def get_insurance_schedule():
         "schedule_items": items
     }
 
+
+@router.post("/reset-demo")
+async def reset_demo_data():
+    """
+    Reset the household registry back to canonical golden demonstration records.
+    Useful for live hackathon pitches and product demonstrations.
+    """
+    passports = store.reset_to_demo()
+    return {
+        "status": "success",
+        "message": "Household memory successfully reset to golden demo state.",
+        "product_count": len(passports),
+        "passports": passports
+    }
+
+
