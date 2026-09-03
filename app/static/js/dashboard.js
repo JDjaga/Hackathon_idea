@@ -1569,6 +1569,11 @@ function closeLiveCameraModal() {
   const modal = document.getElementById('live-camera-modal');
   if (modal) modal.classList.add('hidden');
   stopCameraStream();
+
+  const capState = document.getElementById('camera-capture-state');
+  const routeState = document.getElementById('camera-route-state');
+  if(capState) capState.classList.remove('hidden');
+  if(routeState) routeState.classList.add('hidden');
 }
 
 async function flipCameraDirection() {
@@ -1590,6 +1595,7 @@ function captureCameraSnapshot() {
   const ctx = canvas.getContext('2d');
   if (video.srcObject && video.readyState >= 2) {
     ctx.drawImage(video, 0, 0, width, height);
+    video.pause();
   } else {
     // Generate simulated snapshot for demonstration if hardware camera unavailable
     ctx.fillStyle = '#0F172A';
@@ -1599,27 +1605,36 @@ function captureCameraSnapshot() {
     ctx.fillText('Live Camera Snapshot', 40, height / 2);
   }
 
-  canvas.toBlob((blob) => {
-    if (!blob) return;
-    const file = new File([blob], `camera_snap_${Date.now()}.jpg`, { type: 'image/jpeg' });
-    const target = document.querySelector('input[name="cam-target"]:checked')?.value || 'smart-capture';
+  // Show routing state
+  document.getElementById('camera-capture-state').classList.add('hidden');
+  document.getElementById('camera-route-state').classList.remove('hidden');
 
-    closeLiveCameraModal();
-
-    if (target === 'smart-capture') {
-      switchToTab('tab-document-studio');
-      handleDppFileUpload(file);
-      showToast('📸 Snapshot routed to Smart Capture Studio.');
-    } else if (target === 'compat-scan') {
-      switchToTab('tab-compatibility');
-      handleCompatFileUpload(file);
-      showToast('📸 Snapshot routed to Compatibility Scanner.');
-    } else if (target === 'appliance-vision') {
-      switchToTab('tab-appliance-vision');
-      handleYoloFileUpload(file);
-      showToast('📸 Snapshot routed to Appliance Vision.');
-    }
-  }, 'image/jpeg', 0.92);
+  // Attach listeners to route buttons
+  document.querySelectorAll('.route-action-btn').forEach(btn => {
+    btn.onclick = () => {
+      const target = btn.dataset.target;
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const file = new File([blob], `camera_snap_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        
+        closeLiveCameraModal();
+        
+        if (target === 'smart-capture') {
+          switchToTab('tab-document-studio');
+          handleDppFileUpload(file);
+          showToast('📸 Snapshot routed to Smart Capture Studio.');
+        } else if (target === 'compat-scan') {
+          switchToTab('tab-compatibility');
+          handleCompatFileUpload(file);
+          showToast('📸 Snapshot routed to Compatibility Scanner.');
+        } else if (target === 'appliance-vision') {
+          switchToTab('tab-appliance-vision');
+          handleYoloFileUpload(file);
+          showToast('📸 Snapshot routed to Appliance Vision.');
+        }
+      }, 'image/jpeg', 0.92);
+    };
+  });
 }
 
 /* ============================================================

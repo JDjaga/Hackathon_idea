@@ -792,47 +792,50 @@
       </div>
     </div>
   <!-- Live Phone Camera Scanner Modal -->
-  <div id="live-camera-modal" class="modal-backdrop hidden">
-    <div class="modal-card camera-modal-card">
-      <button class="modal-close" id="btn-close-camera-modal">×</button>
-      <div class="camera-modal-content">
-        <div class="camera-modal-header">
-          <span class="service-badge">📷 LIVE PHONE CAMERA SCANNER</span>
-          <h3>Scan Document, Appliance, or Part</h3>
-          <p class="text-muted" style="font-size:0.85rem;">Using rear camera viewfinder on your device</p>
-        </div>
+  <div id="live-camera-modal" class="modal-backdrop camera-modal-fullscreen hidden">
+    <div class="camera-fullscreen-container">
+      
+      <!-- Top Bar -->
+      <div class="camera-top-bar">
+        <button class="btn-camera-icon" id="btn-switch-camera" title="Switch Camera">🔄</button>
+        <span class="camera-badge">HOME<span class="gold-gradient-text">MIND</span> LENS</span>
+        <button class="btn-camera-icon" id="btn-close-camera-modal">✕</button>
+      </div>
 
-        <div class="camera-target-selector">
-          <label class="section-label">Route snapshot to:</label>
-          <div class="target-pills">
-            <label class="radio-pill"><input type="radio" name="cam-target" value="smart-capture" checked> <span>Document</span></label>
-            <label class="radio-pill"><input type="radio" name="cam-target" value="appliance-vision"> <span>Point-and-Ask</span></label>
-            <label class="radio-pill"><input type="radio" name="cam-target" value="compat-scan"> <span>Replacement part</span></label>
-          </div>
+      <!-- Live Video Viewfinder -->
+      <div class="camera-viewfinder-wrapper">
+        <video id="live-camera-feed" autoplay playsinline muted></video>
+        <div class="viewfinder-overlay">
+          <div class="viewfinder-frame"></div>
         </div>
+        <canvas id="camera-snapshot-canvas" class="hidden"></canvas>
+      </div>
 
-        <!-- Live Video Viewfinder -->
-        <div class="camera-viewfinder-wrapper">
-          <video id="live-camera-feed" autoplay playsinline muted></video>
-          <div class="viewfinder-overlay">
-            <div class="viewfinder-box"></div>
-          </div>
-          <canvas id="camera-snapshot-canvas" class="hidden"></canvas>
-        </div>
-
-        <!-- Camera Controls -->
-        <div class="camera-controls-bar">
-          <button class="btn btn-secondary" id="btn-switch-camera" title="Switch Camera">
-            <span>🔄</span> Flip
-          </button>
-          <button class="btn-camera-snap" id="btn-snap-photo" title="Snap Photo">
+      <!-- Bottom Controls Area -->
+      <div class="camera-bottom-controls">
+        <p class="camera-hint-text">Point at a product, warranty, or part</p>
+        
+        <!-- State 1: Capture -->
+        <div class="camera-capture-state" id="camera-capture-state">
+          <button class="btn-camera-snap-huge" id="btn-snap-photo" title="Snap Photo">
             <span class="snap-inner-circle"></span>
           </button>
-          <button class="btn btn-secondary" id="btn-stop-camera">
-            Cancel
+        </div>
+
+        <!-- State 2: Routing (Hidden until photo snapped) -->
+        <div class="camera-route-state hidden" id="camera-route-state">
+          <button class="route-action-btn" data-target="smart-capture">
+            <span class="icon">📄</span> <span class="label">Extract<br>Document</span>
+          </button>
+          <button class="route-action-btn" data-target="appliance-vision">
+            <span class="icon">👁️</span> <span class="label">Identify<br>Appliance</span>
+          </button>
+          <button class="route-action-btn" data-target="compat-scan">
+            <span class="icon">🔍</span> <span class="label">Check<br>Part</span>
           </button>
         </div>
       </div>
+
     </div>
   </div>
 
