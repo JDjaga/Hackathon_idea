@@ -627,6 +627,7 @@ def _maybe_phrase_with_local_llm(query: str, result: Dict[str, Any]) -> Optional
         f"USER QUESTION: {query}\nFACTS JSON:\n{json.dumps(facts, ensure_ascii=False)[:4000]}\n"
     )
     try:
+        from app.config import ASK_LLM_TIMEOUT
         res = requests.post(
             OLLAMA_GENERATE_URL,
             json={
@@ -635,7 +636,7 @@ def _maybe_phrase_with_local_llm(query: str, result: Dict[str, Any]) -> Optional
                 "stream": False,
                 "options": {"temperature": 0.0},
             },
-            timeout=15.0,
+            timeout=ASK_LLM_TIMEOUT,
         )
         if res.status_code == 200:
             text = (res.json().get("response") or "").strip()

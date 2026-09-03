@@ -66,6 +66,7 @@ Note: event_type must be one of: "service", "consumable", "installation".
 Respond ONLY with valid JSON. No markdown, no explanation.
 """
     try:
+        from app.config import ASK_LLM_TIMEOUT
         res = requests.post(
             OLLAMA_GENERATE_URL,
             json={
@@ -75,7 +76,7 @@ Respond ONLY with valid JSON. No markdown, no explanation.
                 "format": "json",
                 "options": {"temperature": 0.0},
             },
-            timeout=10.0,
+            timeout=ASK_LLM_TIMEOUT,
         )
         if res.status_code == 200:
             text = res.json().get("response", "").strip()

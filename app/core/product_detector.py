@@ -113,7 +113,7 @@ Return ONLY a valid JSON array of objects:
             "stream": False,
             "options": {"temperature": 0.0}
         }
-        res = requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=20.0)
+        res = requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=OLLAMA_TIMEOUT)
         if res.status_code == 200:
             raw = res.json().get("response", "")
             parsed = clean_json_response(raw)
