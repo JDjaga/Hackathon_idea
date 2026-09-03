@@ -166,6 +166,32 @@ class TestHouseholdIntelligence(unittest.TestCase):
         self.assertEqual(res["action"], "linked")
         self.assertEqual(res["linked_to_id"], target["passport_id"])
 
+    def test_export_csv(self):
+        res = self.client.get("/api/household/export/csv")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("text/csv", res.headers.get("content-type", ""))
+        self.assertIn("Passport ID,Product Name,Brand", res.text)
+        self.assertIn("HomeMind_Household_Asset_Schedule.csv", res.headers.get("content-disposition", ""))
+
+    def test_export_insurance(self):
+        res = self.client.get("/api/household/export/insurance")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("report_title", data)
+        self.assertIn("total_declared_value", data)
+        self.assertGreater(data["total_declared_value"], 0)
+        self.assertIn("schedule_items", data)
+        self.assertGreater(len(data["schedule_items"]), 0)
+
+    def test_pwa_assets(self):
+        manifest_res = self.client.get("/static/manifest.json")
+        self.assertEqual(manifest_res.status_code, 200)
+        self.assertIn("HomeMind", manifest_res.json()["name"])
+
+        sw_res = self.client.get("/static/service-worker.js")
+        self.assertEqual(sw_res.status_code, 200)
+        self.assertIn("homemind-v3", sw_res.text)
+
 
 if __name__ == "__main__":
     unittest.main()

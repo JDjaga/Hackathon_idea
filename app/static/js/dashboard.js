@@ -14,7 +14,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initApplianceVision();
   initPassportVault();
   initServicePassModal();
+  initLiveCameraScanner();
+  initInsuranceScheduleModal();
+  initMobileBottomNav();
   initOfflineDetector();
+  initPwaServiceWorker();
   fetchVaultPassports(); // Pre-cache registered appliances for Point-and-Ask
 });
 
@@ -28,7 +32,9 @@ const state = {
   activePassportData: null,
   vaultPassports: [],
   samples: {},
-  recognition: null
+  recognition: null,
+  cameraStream: null,
+  cameraFacingMode: 'environment'
 };
 
 /* ============================================================
@@ -47,6 +53,11 @@ function initTabs() {
       tab.classList.add('active');
       const targetContent = document.getElementById(targetId);
       if (targetContent) targetContent.classList.add('active');
+
+      // Synchronize mobile bottom nav
+      document.querySelectorAll('.bottom-nav-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === targetId);
+      });
 
       if (targetId === 'tab-household-health') {
         fetchHouseholdHealth();
@@ -1415,4 +1426,237 @@ function showToast(message, duration = 3500) {
     toast.style.transform = 'translateY(10px)';
     setTimeout(() => toast.remove(), 300);
   }, duration);
+}
+
+/* ============================================================
+   12. LIVE PHONE CAMERA SCANNER (WebRTC getUserMedia)
+   ============================================================ */
+function initLiveCameraScanner() {
+  const btnOpenHeader = document.getElementById('btn-open-camera');
+  const btnClose = document.getElementById('btn-close-camera-modal');
+  const btnStop = document.getElementById('btn-stop-camera');
+  const btnSwitch = document.getElementById('btn-switch-camera');
+  const btnSnap = document.getElementById('btn-snap-photo');
+
+  if (btnOpenHeader) {
+    btnOpenHeader.addEventListener('click', openLiveCameraModal);
+  }
+  if (btnClose) {
+    btnClose.addEventListener('click', closeLiveCameraModal);
+  }
+  if (btnStop) {
+    btnStop.addEventListener('click', closeLiveCameraModal);
+  }
+  if (btnSwitch) {
+    btnSwitch.addEventListener('click', flipCameraDirection);
+  }
+  if (btnSnap) {
+    btnSnap.addEventListener('click', captureCameraSnapshot);
+  }
+}
+
+async function openLiveCameraModal() {
+  const modal = document.getElementById('live-camera-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  await startCameraStream();
+}
+
+async function startCameraStream() {
+  const video = document.getElementById('live-camera-feed');
+  if (!video) return;
+
+  // Stop any active stream first
+  stopCameraStream();
+
+  const constraints = {
+    video: {
+      facingMode: { ideal: state.cameraFacingMode },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    },
+    audio: false
+  };
+
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      state.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = state.cameraStream;
+      await video.play();
+      showToast('📷 Live phone viewfinder active.');
+    } else {
+      throw new Error('Camera access not supported by browser.');
+    }
+  } catch (err) {
+    console.warn('Camera stream error:', err);
+    showToast(`Camera notice: ${err.message}. Using simulated mobile viewfinder.`);
+  }
+}
+
+function stopCameraStream() {
+  if (state.cameraStream) {
+    state.cameraStream.getTracks().forEach(track => track.stop());
+    state.cameraStream = null;
+  }
+}
+
+function closeLiveCameraModal() {
+  const modal = document.getElementById('live-camera-modal');
+  if (modal) modal.classList.add('hidden');
+  stopCameraStream();
+}
+
+async function flipCameraDirection() {
+  state.cameraFacingMode = state.cameraFacingMode === 'environment' ? 'user' : 'environment';
+  showToast(`Switched camera: ${state.cameraFacingMode}`);
+  await startCameraStream();
+}
+
+function captureCameraSnapshot() {
+  const video = document.getElementById('live-camera-feed');
+  const canvas = document.getElementById('camera-snapshot-canvas');
+  if (!canvas) return;
+
+  const width = video.videoWidth || 640;
+  const height = video.videoHeight || 480;
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  if (video.srcObject && video.readyState >= 2) {
+    ctx.drawImage(video, 0, 0, width, height);
+  } else {
+    // Generate simulated snapshot for demonstration if hardware camera unavailable
+    ctx.fillStyle = '#0F172A';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#F59E0B';
+    ctx.font = '24px Outfit, sans-serif';
+    ctx.fillText('Live Camera Snapshot', 40, height / 2);
+  }
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const file = new File([blob], `camera_snap_${Date.now()}.jpg`, { type: 'image/jpeg' });
+    const target = document.querySelector('input[name="cam-target"]:checked')?.value || 'smart-capture';
+
+    closeLiveCameraModal();
+
+    if (target === 'smart-capture') {
+      switchToTab('tab-document-studio');
+      handleDppFileUpload(file);
+      showToast('📸 Snapshot routed to Smart Capture Studio.');
+    } else if (target === 'compat-scan') {
+      switchToTab('tab-compatibility');
+      handleCompatFileUpload(file);
+      showToast('📸 Snapshot routed to Compatibility Scanner.');
+    } else if (target === 'appliance-vision') {
+      switchToTab('tab-appliance-vision');
+      handleYoloFileUpload(file);
+      showToast('📸 Snapshot routed to Appliance Vision.');
+    }
+  }, 'image/jpeg', 0.92);
+}
+
+/* ============================================================
+   13. HOUSEHOLD INSURANCE & OFFICE KIT MODAL
+   ============================================================ */
+function initInsuranceScheduleModal() {
+  const btnOpen = document.getElementById('btn-open-insurance');
+  const btnClose = document.getElementById('btn-close-insurance-modal');
+  const modal = document.getElementById('insurance-modal');
+
+  if (btnOpen) {
+    btnOpen.addEventListener('click', openInsuranceModal);
+  }
+  if (btnClose) {
+    btnClose.addEventListener('click', () => modal?.classList.add('hidden'));
+  }
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.add('hidden');
+    });
+  }
+}
+
+async function openInsuranceModal() {
+  const modal = document.getElementById('insurance-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  try {
+    const res = await fetch('/api/household/export/insurance');
+    if (!res.ok) throw new Error('Failed to fetch insurance schedule');
+    const data = await res.json();
+
+    // Stats
+    document.getElementById('ins-total-val').textContent = `${data.currency || 'INR'} ${Number(data.total_declared_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    document.getElementById('ins-item-count').textContent = data.total_asset_count || 0;
+
+    // Room Valuations
+    const roomContainer = document.getElementById('ins-rooms-summary');
+    if (roomContainer) {
+      roomContainer.innerHTML = '';
+      const rooms = data.room_valuations || {};
+      Object.keys(rooms).forEach(roomName => {
+        const val = rooms[roomName];
+        const chip = document.createElement('div');
+        chip.className = 'ins-room-chip';
+        chip.innerHTML = `<strong>${roomName}:</strong> ${data.currency} ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
+        roomContainer.appendChild(chip);
+      });
+    }
+
+    // Table Rows
+    const tbody = document.getElementById('insurance-table-body');
+    if (tbody) {
+      tbody.innerHTML = '';
+      const items = data.schedule_items || [];
+      items.forEach(it => {
+        const tr = document.createElement('tr');
+        const priceStr = it.purchase_price ? `${it.currency} ${Number(it.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
+        tr.innerHTML = `
+          <td><strong>${it.product || '—'}</strong></td>
+          <td><span class="item-room-badge">${it.room || 'Unassigned'}</span></td>
+          <td class="font-mono">${it.model || '—'}</td>
+          <td class="font-mono">${it.serial || '—'}</td>
+          <td class="font-mono">${it.purchase_date || '—'}</td>
+          <td class="font-mono gold-highlight">${priceStr}</td>
+          <td><span class="status-pill ${it.health_status === 'good' ? 'online' : 'offline'}">${(it.health_status || 'good').toUpperCase()}</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    showToast('📋 Household Insurance Asset Schedule loaded.');
+  } catch (err) {
+    showToast(`Insurance report error: ${err.message}`);
+  }
+}
+
+/* ============================================================
+   14. MOBILE BOTTOM NAVIGATION BAR & PWA
+   ============================================================ */
+function initMobileBottomNav() {
+  const bottomItems = document.querySelectorAll('.bottom-nav-item[data-tab]');
+  const btnBottomCamera = document.getElementById('btn-bottom-camera');
+
+  bottomItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const tabId = item.dataset.tab;
+      switchToTab(tabId);
+    });
+  });
+
+  if (btnBottomCamera) {
+    btnBottomCamera.addEventListener('click', openLiveCameraModal);
+  }
+}
+
+function initPwaServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/service-worker.js')
+      .then((reg) => console.log('HomeMind PWA Service Worker registered:', reg.scope))
+      .catch((err) => console.warn('PWA registration notice:', err));
+  }
 }

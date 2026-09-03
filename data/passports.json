@@ -212,9 +212,21 @@
         "extracted_at": "2026-09-03T05:39:34.538886",
         "snippet": "Auto-linked from camera_test: Air Conditioner FTKF35UV16V",
         "document_id": "PP-20260903053934-5"
+      },
+      {
+        "type": "service_receipt",
+        "source": "camera_test",
+        "extracted_at": "2026-09-03T05:44:02.353516",
+        "snippet": "Auto-linked from camera_test: Air Conditioner FTKF35UV16V",
+        "document_id": "PP-20260903054402-5"
       }
     ],
     "events": [
+      {
+        "type": "document_linked",
+        "date": "2026-09-03",
+        "description": "Linked Service Receipt document (camera_test)"
+      },
       {
         "type": "document_linked",
         "date": "2026-09-03",

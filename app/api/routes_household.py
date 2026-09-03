@@ -6,11 +6,13 @@ event timeline, warranty claim pack generation, compatibility scanner, and techn
 
 import os
 import io
+import csv
 import json
 import base64
 import tempfile
+from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form, Response
 from pydantic import BaseModel
 
 import qrcode
@@ -220,3 +222,103 @@ async def scan_compatibility(
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+
+@router.get("/export/csv")
+async def export_household_csv():
+    """
+    Export complete Household Asset & Insurance Schedule as a standard CSV spreadsheet
+    compatible with Microsoft Excel, Google Sheets, and Office Suites.
+    """
+    products = store.get_all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header row
+    writer.writerow([
+        "Passport ID",
+        "Product Name",
+        "Brand",
+        "Model",
+        "Serial Number",
+        "Room Location",
+        "Purchase Date",
+        "Purchase Price",
+        "Currency",
+        "Seller / Merchant",
+        "Invoice Number",
+        "Warranty Term",
+        "Warranty Expiry Date",
+        "Health Status",
+        "Linked Documents Count",
+        "Service Records Count"
+    ])
+
+    for p in products:
+        writer.writerow([
+            p.get("passport_id", ""),
+            p.get("product", ""),
+            p.get("brand", ""),
+            p.get("model", ""),
+            p.get("serial_number", ""),
+            p.get("room", "Unassigned"),
+            p.get("purchase_date", ""),
+            p.get("purchase_price", ""),
+            p.get("currency", "INR"),
+            p.get("seller", ""),
+            p.get("invoice_number", ""),
+            p.get("warranty", ""),
+            p.get("warranty_expiry_date", ""),
+            p.get("health_status", "good"),
+            len(p.get("linked_documents", [])),
+            len(p.get("events", []))
+        ])
+
+    csv_content = output.getvalue()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=HomeMind_Household_Asset_Schedule.csv"}
+    )
+
+
+@router.get("/export/insurance")
+async def get_insurance_schedule():
+    """
+    Generate complete Household Insurance Asset Schedule summary
+    for home insurance policy riders, claims, and valuation audits.
+    """
+    products = store.get_all()
+    total_val = sum(p.get("purchase_price", 0) for p in products if isinstance(p.get("purchase_price"), (int, float)))
+
+    by_room = {}
+    items = []
+    for p in products:
+        room = p.get("room") or "Unassigned"
+        price = p.get("purchase_price") or 0.0
+        by_room[room] = by_room.get(room, 0.0) + (price if isinstance(price, (int, float)) else 0.0)
+
+        items.append({
+            "passport_id": p.get("passport_id"),
+            "product": f"{p.get('brand', '')} {p.get('product', '')}".strip(),
+            "model": p.get("model"),
+            "serial": p.get("serial_number"),
+            "room": room,
+            "purchase_date": p.get("purchase_date"),
+            "purchase_price": price,
+            "currency": p.get("currency", "INR"),
+            "warranty_expiry": p.get("warranty_expiry_date"),
+            "health_status": p.get("health_status", "good"),
+            "has_invoice": bool(p.get("invoice_number") or any(d.get("type") == "invoice" for d in p.get("linked_documents", [])))
+        })
+
+    return {
+        "report_title": "HomeMind Household Insurance Asset Schedule",
+        "generated_at": datetime.now().isoformat(),
+        "total_asset_count": len(products),
+        "total_declared_value": round(total_val, 2),
+        "currency": "INR",
+        "room_valuations": {r: round(v, 2) for r, v in by_room.items()},
+        "schedule_items": items
+    }
+

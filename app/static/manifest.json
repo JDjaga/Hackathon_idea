@@ -1,0 +1,25 @@
+{
+  "name": "HomeMind — Household Intelligence",
+  "short_name": "HomeMind",
+  "description": "Your phone remembers everything you own. Digital Product Passports, warranty tracking, and appliance intelligence.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070B14",
+  "theme_color": "#F59E0B",
+  "icons": [
+    {
+      "src": "/static/images/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/images/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "lifestyle", "productivity"]
+}
