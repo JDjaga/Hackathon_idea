@@ -48,10 +48,10 @@ def answer_household_query(
 
     if use_llm:
         phrased = _maybe_phrase_with_local_llm(query.strip(), fallback)
-        if phrased:
-            fallback["answer"] = phrased
+        if phrased and isinstance(phrased, dict):
+            fallback["answer"] = phrased.get("text") or fallback["answer"]
             fallback["engine"] = "grounded_rules+llm_phrasing"
-            fallback["model"] = TEXT_MODEL
+            fallback["model"] = phrased.get("model") or TEXT_MODEL
 
     return fallback
 
@@ -609,10 +609,11 @@ def _find_matching_product(q: str, products: List[Dict[str, Any]]) -> Optional[D
     return best
 
 
-def _maybe_phrase_with_local_llm(query: str, result: Dict[str, Any]) -> Optional[str]:
+def _maybe_phrase_with_local_llm(query: str, result: Dict[str, Any]) -> Optional[Dict[str, str]]:
     info = check_ollama()
     if not info.get("online") or not info.get("has_text_model"):
         return None
+    model_to_use = info.get("chat_model") or TEXT_MODEL
     facts = {
         "answer": result.get("answer"),
         "sources": result.get("sources"),
@@ -629,16 +630,17 @@ def _maybe_phrase_with_local_llm(query: str, result: Dict[str, Any]) -> Optional
         res = requests.post(
             OLLAMA_GENERATE_URL,
             json={
-                "model": TEXT_MODEL,
+                "model": model_to_use,
                 "prompt": prompt,
                 "stream": False,
                 "options": {"temperature": 0.0},
             },
-            timeout=8.0,
+            timeout=15.0,
         )
         if res.status_code == 200:
             text = (res.json().get("response") or "").strip()
-            return text or None
+            if text:
+                return {"text": text, "model": model_to_use}
     except Exception:
         return None
     return None

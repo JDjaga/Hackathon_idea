@@ -79,6 +79,16 @@ SAMPLE_FIXTURES = {
 }
 
 
+def _sample_fixture_for(filename: str) -> Optional[Dict[str, Any]]:
+    """Return golden demo fixture only for known bundled sample files during offline demo."""
+    fn = (filename or "").lower()
+    if "sample_warranty_card" in fn or "warranty_1" in fn:
+        return SAMPLE_FIXTURES.get("warranty_1")
+    if "electrolux" in fn or "warranty_2" in fn:
+        return SAMPLE_FIXTURES.get("warranty_2")
+    return None
+
+
 def pick_chat_model(models: Optional[List[str]] = None) -> Optional[str]:
     """Choose any installed Ollama model that can answer text (chat or vision)."""
     names = [m for m in (models or []) if m]
@@ -87,10 +97,11 @@ def pick_chat_model(models: Optional[List[str]] = None) -> Optional[str]:
     preferred = [
         VISION_MODEL,
         TEXT_MODEL,
-        "qwen3-vl",
-        "qwen3",
+        "qwen2.5-vl",
         "qwen2.5vl",
         "qwen2.5",
+        "qwen3-vl",
+        "qwen3",
         "llama3.2",
         "llama3.1",
         "llama3",
@@ -99,9 +110,9 @@ def pick_chat_model(models: Optional[List[str]] = None) -> Optional[str]:
         "mistral",
     ]
     for pref in preferred:
-        key = (pref or "").split(":")[0]
+        key = (pref or "").split(":")[0].lower()
         for m in names:
-            if key and key in m:
+            if key and key in (m or "").lower():
                 return m
     return names[0]
 
@@ -109,10 +120,13 @@ def pick_chat_model(models: Optional[List[str]] = None) -> Optional[str]:
 def check_ollama() -> Dict[str, Any]:
     """Check if Ollama is accessible and whether vision/text models are installed."""
     try:
-        res = requests.get(OLLAMA_TAGS_URL, timeout=3.0)
+        res = requests.get(OLLAMA_TAGS_URL, timeout=2.0)
         if res.status_code == 200:
             models = [m.get("name") for m in res.json().get("models", [])]
-            has_vision = any(VISION_MODEL.split(":")[0] in (m or "") for m in models)
+            has_vision = any(
+                any(v in (m or "").lower() for v in ["vl", "vision", "llava", "minicpm"])
+                for m in models
+            ) or any(((VISION_MODEL or "").split(":")[0]).lower() in (m or "").lower() for m in models)
             chat_model = pick_chat_model(models)
             has_text = bool(chat_model)
             return {
