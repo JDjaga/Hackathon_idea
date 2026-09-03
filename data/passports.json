@@ -181,5 +181,65 @@
     "next_maintenance_date": "2026-10-17",
     "maintenance_interval_days": 90,
     "health_status": "attention"
+  },
+  {
+    "product": "Dyson Vacuum Cleaner",
+    "brand": "Dyson",
+    "purchase_price": 45000.0,
+    "currency": "INR",
+    "purchase_date": "2026-09-03",
+    "events": [
+      {
+        "type": "purchase",
+        "date": "2026-09-03",
+        "description": "Added via Conversational AI Memory"
+      }
+    ],
+    "product_images": [],
+    "linked_documents": [],
+    "next_maintenance_date": "2026-12-02",
+    "maintenance_interval_days": 90,
+    "health_status": "good",
+    "passport_id": "PP-20260903071225-4",
+    "created_at": "2026-09-03T07:12:25.053536",
+    "source": "chat_memory",
+    "identity_match": {
+      "status": "new_product",
+      "matched_passport_id": null,
+      "match_confidence": null,
+      "matched_fields": [],
+      "conflicting_fields": [],
+      "score": 0
+    }
+  },
+  {
+    "product": "Air Purifier",
+    "brand": "Philips",
+    "purchase_price": 12345.0,
+    "currency": "INR",
+    "purchase_date": "2026-09-03",
+    "events": [
+      {
+        "type": "purchase",
+        "date": "2026-09-03",
+        "description": "Added via Conversational AI Memory"
+      }
+    ],
+    "product_images": [],
+    "linked_documents": [],
+    "next_maintenance_date": "2026-12-02",
+    "maintenance_interval_days": 90,
+    "health_status": "good",
+    "passport_id": "PP-20260903071231-5",
+    "created_at": "2026-09-03T07:12:31.303001",
+    "source": "chat_memory",
+    "identity_match": {
+      "status": "new_product",
+      "matched_passport_id": null,
+      "match_confidence": null,
+      "matched_fields": [],
+      "conflicting_fields": [],
+      "score": 0
+    }
   }
 ]
