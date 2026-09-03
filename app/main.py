@@ -23,7 +23,7 @@ from app.config import (
     APP_VERSION,
     ROOMS
 )
-from app.api import dpp_router, matcher_router, detector_router, samples_router, household_router
+from app.api import dpp_router, matcher_router, detector_router, samples_router, household_router, ask_router
 from app.core.dpp_extractor import check_ollama
 from app.core.ocr_engine import is_ocr_available, get_ocr_engine_name
 from app.core.passport_store import get_passport_store
@@ -57,6 +57,7 @@ app.include_router(matcher_router)
 app.include_router(detector_router)
 app.include_router(samples_router)
 app.include_router(household_router)
+app.include_router(ask_router)
 
 store = get_passport_store()
 

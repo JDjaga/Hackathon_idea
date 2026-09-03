@@ -1,24 +1,29 @@
 /**
- * AI Product Guardian — Interactive Client Dashboard Logic
+ * HomeMind — Interactive Household Intelligence Dashboard Logic
+ * "Your phone remembers everything you own."
  */
 
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
+  initHouseholdHealth();
+  initAskMyHouse();
   loadSampleAssets();
   initDocumentStudio();
   initConflictRadar();
   initApplianceVision();
   initPassportVault();
+  initOfflineDetector();
 });
 
-// State Store
+// Global State Store
 const state = {
   currentDppFile: null,
   currentDppSamplePath: null,
   currentYoloFile: null,
   currentYoloSamplePath: null,
   activePassportData: null,
-  samples: {}
+  samples: {},
+  recognition: null
 };
 
 /* ============================================================
@@ -38,15 +43,352 @@ function initTabs() {
       const targetContent = document.getElementById(targetId);
       if (targetContent) targetContent.classList.add('active');
 
-      if (targetId === 'tab-passport-vault') {
+      if (targetId === 'tab-household-health') {
+        fetchHouseholdHealth();
+      } else if (targetId === 'tab-passport-vault') {
         fetchVaultPassports();
       }
     });
   });
 }
 
+function switchToTab(tabId) {
+  const targetTab = document.querySelector(`.nav-tab[data-tab="${tabId}"]`);
+  if (targetTab) targetTab.click();
+}
+
 /* ============================================================
-   2. SAMPLE ASSETS LOADER (1-Click Demos)
+   2. HOUSEHOLD HEALTH & ATTENTION DASHBOARD
+   ============================================================ */
+function initHouseholdHealth() {
+  fetchHouseholdHealth();
+}
+
+async function fetchHouseholdHealth() {
+  try {
+    const res = await fetch('/api/household/health');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // Metrics Bar
+    document.getElementById('stat-total').textContent = data.total_products || 0;
+    document.getElementById('stat-attention').textContent = data.needs_attention + data.upcoming_issues || 0;
+    document.getElementById('stat-rooms').textContent = data.room_count || 0;
+    
+    // Overview Cards
+    document.getElementById('card-urgent-count').textContent = data.needs_attention || 0;
+    document.getElementById('card-upcoming-count').textContent = data.upcoming_issues || 0;
+    document.getElementById('card-healthy-count').textContent = data.healthy || 0;
+
+    // Render Attention List & Room Grid & Timeline
+    renderAttentionItems();
+    renderRoomGrid();
+    renderTimeline();
+
+  } catch (err) {
+    console.error('Failed to fetch household health:', err);
+  }
+}
+
+async function renderAttentionItems() {
+  const container = document.getElementById('attention-items-container');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/household/attention');
+    const data = await res.json();
+    const items = data.items || [];
+
+    container.innerHTML = '';
+
+    if (!items.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <span class="empty-icon">🟢</span>
+          <p><strong>All clear!</strong> All registered appliances have active warranties and clean maintenance schedules.</p>
+        </div>
+      `;
+      return;
+    }
+
+    items.forEach(item => {
+      const alert = item.alerts[0] || { icon: '⚠️', message: 'Attention required', action: 'Review product' };
+      const card = document.createElement('div');
+      card.className = `attention-item-card ${item.health_status}`;
+      
+      card.innerHTML = `
+        <div class="attention-item-header">
+          <span class="item-icon">${alert.icon}</span>
+          <div class="item-title-group">
+            <h4 class="item-title">${item.brand} ${item.product}</h4>
+            <span class="item-room-badge">${item.room}</span>
+          </div>
+        </div>
+        <p class="attention-message">${alert.message}</p>
+        <p class="attention-action">👉 <em>${alert.action}</em></p>
+        <div class="attention-card-actions">
+          <button class="btn btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="downloadClaimPack('${item.passport_id}')">
+            <span>🛡️</span> Claim Pack
+          </button>
+          <button class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="viewPassportModal('${item.passport_id}')">
+            View Product
+          </button>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state">Failed to load attention items.</div>';
+  }
+}
+
+async function renderRoomGrid() {
+  const container = document.getElementById('room-grid-container');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/household/rooms');
+    const data = await res.json();
+    const rooms = data.rooms || {};
+
+    container.innerHTML = '';
+
+    const roomIcons = {
+      'Kitchen': '🍳',
+      'Living Room': '🛋️',
+      'Bedroom': '🛏️',
+      'Bathroom': '🚿',
+      'Utility': '🧺',
+      'Garage': '🚗',
+      'Office': '💻',
+      'Balcony': '🪴'
+    };
+
+    Object.keys(rooms).forEach(roomName => {
+      const products = rooms[roomName];
+      const icon = roomIcons[roomName] || '🏠';
+      const card = document.createElement('div');
+      card.className = 'room-tile-card';
+      card.onclick = () => filterVaultByRoom(roomName);
+
+      card.innerHTML = `
+        <span class="room-tile-icon">${icon}</span>
+        <h4 class="room-tile-name">${roomName}</h4>
+        <span class="room-tile-count">${products.length} product(s)</span>
+      `;
+      container.appendChild(card);
+    });
+
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state">Failed to load room grid.</div>';
+  }
+}
+
+async function renderTimeline() {
+  const container = document.getElementById('timeline-container');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/household/timeline?days=90');
+    const data = await res.json();
+    const timeline = data.timeline || [];
+
+    container.innerHTML = '';
+
+    if (!timeline.length) {
+      container.innerHTML = '<div class="empty-state">No upcoming events in the next 90 days.</div>';
+      return;
+    }
+
+    timeline.forEach(event => {
+      const item = document.createElement('div');
+      item.className = `timeline-item ${event.severity}`;
+      item.innerHTML = `
+        <span class="timeline-date font-mono">${event.date}</span>
+        <span class="timeline-icon">${event.icon}</span>
+        <div class="timeline-content">
+          <strong>${event.title}</strong>
+        </div>
+      `;
+      container.appendChild(item);
+    });
+
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state">Failed to load timeline.</div>';
+  }
+}
+
+function filterVaultByRoom(roomName) {
+  switchToTab('tab-passport-vault');
+  const roomSelect = document.getElementById('vault-room-filter');
+  if (roomSelect) {
+    roomSelect.value = roomName;
+    fetchVaultPassports();
+  }
+}
+
+/* ============================================================
+   3. ASK MY HOUSE (Grounded RAG Chat & Voice)
+   ============================================================ */
+function initAskMyHouse() {
+  const btnSend = document.getElementById('btn-send-ask');
+  const askInput = document.getElementById('ask-input');
+  const btnVoice = document.getElementById('btn-voice-mic');
+
+  if (btnSend) {
+    btnSend.addEventListener('click', () => {
+      const q = askInput.value.trim();
+      if (q) sendAskQuery(q);
+    });
+  }
+
+  if (askInput) {
+    askInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const q = askInput.value.trim();
+        if (q) sendAskQuery(q);
+      }
+    });
+  }
+
+  // Voice Input Setup (Web Speech API)
+  if (btnVoice) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      state.recognition = new SpeechRecognition();
+      state.recognition.continuous = false;
+      state.recognition.interimResults = false;
+      state.recognition.lang = 'en-US';
+
+      state.recognition.onstart = () => {
+        btnVoice.classList.add('recording');
+        showToast('🎤 Listening... speak your question now.');
+      };
+
+      state.recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        askInput.value = transcript;
+        sendAskQuery(transcript);
+      };
+
+      state.recognition.onerror = (e) => {
+        console.error('Speech recognition error:', e.error);
+        showToast(`Voice error: ${e.error}`);
+        btnVoice.classList.remove('recording');
+      };
+
+      state.recognition.onend = () => {
+        btnVoice.classList.remove('recording');
+      };
+
+      btnVoice.addEventListener('click', () => {
+        if (btnVoice.classList.contains('recording')) {
+          state.recognition.stop();
+        } else {
+          state.recognition.start();
+        }
+      });
+    } else {
+      btnVoice.title = 'Voice recognition not supported in this browser';
+      btnVoice.style.opacity = '0.5';
+    }
+  }
+}
+
+window.askPreset = function(query) {
+  switchToTab('tab-ask-house');
+  const input = document.getElementById('ask-input');
+  if (input) input.value = query;
+  sendAskQuery(query);
+};
+
+async function sendAskQuery(query) {
+  const container = document.getElementById('chat-messages-container');
+  const input = document.getElementById('ask-input');
+  if (!container || !query) return;
+
+  // Append User Message
+  appendChatMessage(container, 'user', query);
+  input.value = '';
+
+  // Append Loading Indicator
+  const loadingId = 'chat-loading-' + Date.now();
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'chat-message ai-message loading';
+  loadingDiv.id = loadingId;
+  loadingDiv.innerHTML = `
+    <div class="message-avatar">🏠</div>
+    <div class="message-content"><div class="spinner-small"></div> Searching household memory...</div>
+  `;
+  container.appendChild(loadingDiv);
+  container.scrollTop = container.scrollHeight;
+
+  try {
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
+
+    const data = await res.json();
+    document.getElementById(loadingId)?.remove();
+
+    // Render AI Response
+    let formattedAnswer = data.answer || 'No answer generated.';
+    formattedAnswer = formattedAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    let sourcesHtml = '';
+    if (data.sources && data.sources.length) {
+      sourcesHtml = '<div class="message-sources"><span class="sources-title">🛡️ Grounded Sources:</span><ul>';
+      data.sources.forEach(s => {
+        sourcesHtml += `<li><strong>${s.title}</strong> ${s.field ? `(${s.field})` : ''}</li>`;
+      });
+      sourcesHtml += '</ul></div>';
+    }
+
+    let suggestionsHtml = '';
+    if (data.suggestions && data.suggestions.length) {
+      suggestionsHtml = '<div class="message-suggestions"><span class="suggestions-label">Suggested follow-ups:</span><div class="chips-row">';
+      data.suggestions.forEach(s => {
+        suggestionsHtml += `<button class="sample-chip" onclick="askPreset('${s.replace(/'/g, "\\'")}')">${s}</button>`;
+      });
+      suggestionsHtml += '</div></div>';
+    }
+
+    const aiMsg = document.createElement('div');
+    aiMsg.className = 'chat-message ai-message';
+    aiMsg.innerHTML = `
+      <div class="message-avatar">🏠</div>
+      <div class="message-content">
+        <p>${formattedAnswer}</p>
+        ${sourcesHtml}
+        ${suggestionsHtml}
+      </div>
+    `;
+    container.appendChild(aiMsg);
+    container.scrollTop = container.scrollHeight;
+
+  } catch (err) {
+    document.getElementById(loadingId)?.remove();
+    appendChatMessage(container, 'ai', `⚠️ Failed to execute household search: ${err.message}`);
+  }
+}
+
+function appendChatMessage(container, sender, text) {
+  const msg = document.createElement('div');
+  msg.className = `chat-message ${sender}-message`;
+  const avatar = sender === 'user' ? '👤' : '🏠';
+  msg.innerHTML = `
+    <div class="message-avatar">${avatar}</div>
+    <div class="message-content"><p>${text}</p></div>
+  `;
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+}
+
+/* ============================================================
+   4. SAMPLE ASSETS LOADER (1-Click Demos)
    ============================================================ */
 async function loadSampleAssets() {
   try {
@@ -59,37 +401,41 @@ async function loadSampleAssets() {
       ...(state.samples.invoices_receipts || [])
     ], selectDppSample);
 
-    renderSampleChips('yolo-sample-chips', state.samples.appliance_photos || [], selectYoloSample);
+    renderSampleChips('yolo-sample-chips', [
+      ...(state.samples.appliance_photos || [])
+    ], selectYoloSample);
+
   } catch (err) {
-    console.error('Failed to load sample test assets:', err);
+    console.error('Failed to load sample assets:', err);
   }
 }
 
-function renderSampleChips(containerId, items, clickHandler) {
-  const container = document.getElementById(containerId);
+function renderSampleChips(targetId, items, onClickHandler) {
+  const container = document.getElementById(targetId);
   if (!container) return;
-  container.innerHTML = '';
 
+  container.innerHTML = '';
   if (!items.length) {
-    container.innerHTML = '<span class="text-muted" style="font-size:0.8rem;">No samples found.</span>';
+    container.innerHTML = '<span class="text-muted" style="font-size:0.85rem;">No samples found.</span>';
     return;
   }
 
   items.forEach(item => {
     const chip = document.createElement('button');
     chip.className = 'sample-chip';
-    chip.innerHTML = `<span>📄</span> ${item.title}`;
-    chip.addEventListener('click', () => {
-      container.querySelectorAll('.sample-chip').forEach(c => c.classList.remove('active'));
+    chip.innerHTML = `<span class="chip-icon">📄</span> ${item.name}`;
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelectorAll(`#${targetId} .sample-chip`).forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      clickHandler(item);
+      onClickHandler(item);
     });
     container.appendChild(chip);
   });
 }
 
 /* ============================================================
-   3. DOCUMENT STUDIO (OCR & DPP Extraction)
+   5. SMART CAPTURE (DOCUMENT STUDIO)
    ============================================================ */
 function initDocumentStudio() {
   const dropzone = document.getElementById('dpp-dropzone');
@@ -97,8 +443,6 @@ function initDocumentStudio() {
   const btnExtract = document.getElementById('btn-run-extraction');
   const btnClear = document.getElementById('btn-clear-dpp');
   const btnRemovePreview = document.getElementById('btn-dpp-remove-preview');
-  const btnExport = document.getElementById('btn-export-dpp-json');
-  const btnJumpMatcher = document.getElementById('btn-jump-to-matcher');
 
   dropzone.addEventListener('click', (e) => {
     if (e.target !== btnRemovePreview) fileInput.click();
@@ -131,27 +475,7 @@ function initDocumentStudio() {
   });
 
   btnClear.addEventListener('click', clearDppInput);
-
   btnExtract.addEventListener('click', executeDppExtraction);
-
-  btnExport.addEventListener('click', () => {
-    if (!state.activePassportData) return;
-    const blob = new Blob([JSON.stringify(state.activePassportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${state.activePassportData.passport_id || 'passport'}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Passport JSON exported successfully!');
-  });
-
-  btnJumpMatcher.addEventListener('click', () => {
-    if (!state.activePassportData) return;
-    populateMatcherDocA(state.activePassportData);
-    document.querySelector('[data-tab="tab-conflict-radar"]').click();
-    showToast('Loaded active passport into Document A of Conflict Radar!');
-  });
 }
 
 function handleDppFileUpload(file) {
@@ -198,15 +522,17 @@ function clearDppInput() {
 
 async function executeDppExtraction() {
   const loading = document.getElementById('dpp-loading-state');
-  const outputContainer = document.getElementById('dpp-output-container');
   const emptyState = document.getElementById('dpp-empty-state');
-  const resultWrapper = document.getElementById('passport-result-wrapper');
-  const statusBadge = document.getElementById('extraction-status-badge');
+  const certResult = document.getElementById('dpp-certificate-result');
+  const btnExtract = document.getElementById('btn-run-extraction');
+  const badge = document.getElementById('extraction-status-badge');
+  const roomSelect = document.getElementById('dpp-room-select');
 
   loading.classList.remove('hidden');
   emptyState.classList.add('hidden');
-  resultWrapper.classList.add('hidden');
-  statusBadge.textContent = 'Processing...';
+  certResult.classList.add('hidden');
+  btnExtract.disabled = true;
+  badge.textContent = 'Processing...';
 
   try {
     const formData = new FormData();
@@ -216,156 +542,115 @@ async function executeDppExtraction() {
       formData.append('sample_path', state.currentDppSamplePath);
     }
 
+    if (roomSelect && roomSelect.value) {
+      formData.append('room', roomSelect.value);
+    }
+
     const res = await fetch('/api/dpp/extract', {
       method: 'POST',
       body: formData
     });
 
-    if (!res.ok) throw new Error(`Server returned status ${res.status}`);
-    const data = await res.json();
+    if (!res.ok) throw new Error('Extraction failed');
 
-    if (data.results && data.results.length > 0) {
-      const first = data.results[0];
-      state.activePassportData = first.passport;
-      renderCertificate(first.passport, first.identity_match);
-      statusBadge.textContent = `${data.passport_count} Passport(s) Extracted`;
-      showToast(`Successfully extracted ${data.passport_count} Digital Passport(s)!`);
-      refreshGlobalStats();
-    } else {
-      throw new Error('No product passports detected in document');
-    }
-  } catch (err) {
-    showToast(`Extraction error: ${err.message}`);
-    emptyState.classList.remove('hidden');
-    statusBadge.textContent = 'Extraction Failed';
-  } finally {
+    const data = await res.json();
     loading.classList.add('hidden');
+    certResult.classList.remove('hidden');
+    badge.textContent = 'Extracted';
+
+    if (data.results && data.results.length) {
+      const stored = data.results[0];
+      const passport = stored.passport;
+      const match = stored.identity_match;
+      state.activePassportData = passport;
+
+      renderCertificate(passport, match, data.raw_ocr_snippet);
+      showToast(`Digital Product Passport created: ${passport.product || 'Product'}`);
+      fetchHouseholdHealth();
+    }
+
+  } catch (err) {
+    loading.classList.add('hidden');
+    emptyState.classList.remove('hidden');
+    badge.textContent = 'Error';
+    showToast(`Extraction error: ${err.message}`);
+  } finally {
+    btnExtract.disabled = false;
   }
 }
 
-function renderCertificate(p, matchInfo = {}) {
-  const resultWrapper = document.getElementById('passport-result-wrapper');
-  resultWrapper.classList.remove('hidden');
+function renderCertificate(p, match, ocrSnippet) {
+  document.getElementById('cert-product').textContent = p.product || 'Unknown Product';
+  document.getElementById('cert-brand').textContent = p.brand || 'Unknown Brand';
+  document.getElementById('cert-id').textContent = p.passport_id || 'PP-TEMP';
 
-  document.getElementById('cert-product').textContent = p.product || 'Consumer Product';
-  document.getElementById('cert-brand').textContent = p.brand ? `${p.brand} Registered DPP` : 'Generic Brand';
-  document.getElementById('cert-id').textContent = p.passport_id || 'PP-PENDING';
-  document.getElementById('cert-model').textContent = p.model || 'N/A';
-  document.getElementById('cert-serial').textContent = p.serial_number || 'N/A';
-  document.getElementById('cert-date').textContent = p.purchase_date || 'N/A';
-  document.getElementById('cert-warranty').textContent = p.warranty || 'Standard Manufacturer Warranty';
-  document.getElementById('cert-price').textContent = p.purchase_price ? `${p.currency || 'INR'} ${Number(p.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'N/A';
-  document.getElementById('cert-seller').textContent = p.seller || 'Authorized Retailer';
-  document.getElementById('cert-customer').textContent = p.customer_name || 'Registered Owner';
-  document.getElementById('cert-doc-type').textContent = (p.document_type || 'Warranty Registration Card').replace('_', ' ').toUpperCase();
+  document.getElementById('cert-model').textContent = p.model || '—';
+  document.getElementById('cert-serial').textContent = p.serial_number || '—';
+  document.getElementById('cert-date').textContent = p.purchase_date || '—';
 
-  // Checkbox Reasoning Quote
-  const evidenceBox = document.getElementById('cert-evidence-box');
-  const evidenceText = document.getElementById('cert-evidence-text');
-  if (p.selection_evidence) {
-    evidenceText.textContent = p.selection_evidence;
-    evidenceBox.classList.remove('hidden');
-  } else {
-    evidenceBox.classList.add('hidden');
-  }
+  const priceVal = p.purchase_price ? `${p.currency || 'INR'} ${Number(p.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
+  document.getElementById('cert-price').textContent = priceVal;
+  document.getElementById('cert-seller').textContent = p.seller || '—';
+  document.getElementById('cert-customer').textContent = p.customer_name || '—';
+  document.getElementById('cert-warranty-expiry').textContent = p.warranty_expiry_date || p.warranty || '—';
+  document.getElementById('cert-room').textContent = p.room || 'Unassigned';
 
-  // Verification Banner
-  const banner = document.getElementById('cert-match-banner');
-  const bannerIcon = document.getElementById('banner-icon');
-  const bannerTitle = document.getElementById('banner-title');
-  const bannerDesc = document.getElementById('banner-desc');
+  document.getElementById('cert-ocr-snippet').textContent = ocrSnippet || 'No OCR text extracted.';
 
-  const status = (matchInfo && matchInfo.status) || (p.identity_match && p.identity_match.status) || 'new_product';
+  // Banner status
+  const banner = document.getElementById('cert-verification-banner');
+  const title = document.getElementById('cert-verification-title');
+  const desc = document.getElementById('cert-verification-desc');
 
-  banner.className = `cert-verification-banner ${status}`;
+  const status = (match && match.status) || 'new_product';
+  banner.className = 'cert-verification-banner ' + status;
+
   if (status === 'verified') {
-    bannerIcon.textContent = '✓';
-    bannerTitle.textContent = 'Identity Status: Verified Authentic';
-    bannerDesc.textContent = `Matched against passport ${matchInfo.matched_passport_id || ''}. All serials, dates, and models align.`;
+    title.textContent = 'Identity Verified';
+    desc.textContent = `Matched canonical product (${match.matched_passport_id}) with high confidence.`;
   } else if (status === 'conflict') {
-    bannerIcon.textContent = '⚠️';
-    bannerTitle.textContent = 'Identity Status: Conflict Flagged!';
-    const conflicts = (matchInfo.conflicting_fields || []).map(c => c.field).join(', ');
-    bannerDesc.textContent = `Discrepancy detected with existing records on: ${conflicts || 'serial numbers'}.`;
+    title.textContent = 'Identity Conflict Flagged';
+    desc.textContent = `Serial/Model discrepancy with stored product ${match.matched_passport_id}.`;
   } else {
-    bannerIcon.textContent = '✨';
-    bannerTitle.textContent = 'Identity Status: New Product Registration';
-    bannerDesc.textContent = 'No conflicting prior passports found. Minted as canonical original.';
+    title.textContent = 'Original Household Registration';
+    desc.textContent = 'First canonical mint for this serial number.';
   }
+
+  // Setup buttons
+  document.getElementById('btn-save-passport').onclick = () => switchToTab('tab-passport-vault');
+  document.getElementById('btn-export-json').onclick = () => downloadSinglePassportJson(p);
 }
 
 /* ============================================================
-   4. IDENTITY MATCHER & CONFLICT RADAR
+   6. IDENTITY MATCHER & CONFLICT RADAR
    ============================================================ */
 function initConflictRadar() {
-  const btnCompare = document.getElementById('btn-run-comparison');
-  const btnPresetVerified = document.getElementById('btn-preset-verified');
-  const btnPresetConflict = document.getElementById('btn-preset-conflict');
-
-  btnCompare.addEventListener('click', executeRadarComparison);
-
-  btnPresetVerified.addEventListener('click', () => {
-    document.getElementById('docA-product').value = 'Washing Machine';
-    document.getElementById('docA-brand').value = 'LG';
-    document.getElementById('docA-model').value = 'T75-SKSF1Z';
-    document.getElementById('docA-serial').value = 'LG123456789';
-    document.getElementById('docA-date').value = '2026-08-12';
-    document.getElementById('docA-seller').value = 'Best Electrical Store';
-
-    document.getElementById('docB-product').value = 'Washing Machine';
-    document.getElementById('docB-brand').value = 'LG';
-    document.getElementById('docB-model').value = 'T75SKSF1Z';
-    document.getElementById('docB-serial').value = 'LG123456789';
-    document.getElementById('docB-date').value = '12/08/2026';
-    document.getElementById('docB-seller').value = 'Best Electrical Store Sdn Bhd';
-    executeRadarComparison();
-  });
-
-  btnPresetConflict.addEventListener('click', () => {
-    document.getElementById('docA-product').value = 'Washing Machine';
-    document.getElementById('docA-brand').value = 'LG';
-    document.getElementById('docA-model').value = 'T75-SKSF1Z';
-    document.getElementById('docA-serial').value = 'LG123456789';
-    document.getElementById('docA-date').value = '2026-08-12';
-    document.getElementById('docA-seller').value = 'Best Electrical Store';
-
-    document.getElementById('docB-product').value = 'Washing Machine';
-    document.getElementById('docB-brand').value = 'LG';
-    document.getElementById('docB-model').value = 'T75SKSF1Z';
-    document.getElementById('docB-serial').value = 'LG999999999'; // Conflicting serial
-    document.getElementById('docB-date').value = '2026-08-12';
-    document.getElementById('docB-seller').value = 'Best Electrical Store';
-    executeRadarComparison();
-  });
+  const btnRun = document.getElementById('btn-run-match');
+  if (btnRun) {
+    btnRun.addEventListener('click', executeRadarMatch);
+  }
 }
 
-function populateMatcherDocA(p) {
-  if (p.product) document.getElementById('docA-product').value = p.product;
-  if (p.brand) document.getElementById('docA-brand').value = p.brand;
-  if (p.model) document.getElementById('docA-model').value = p.model;
-  if (p.serial_number) document.getElementById('docA-serial').value = p.serial_number;
-  if (p.purchase_date) document.getElementById('docA-date').value = p.purchase_date;
-  if (p.seller) document.getElementById('docA-seller').value = p.seller;
-}
-
-async function executeRadarComparison() {
+async function executeRadarMatch() {
   const docA = {
-    product: document.getElementById('docA-product').value,
-    brand: document.getElementById('docA-brand').value,
-    model: document.getElementById('docA-model').value,
-    serial_number: document.getElementById('docA-serial').value,
-    purchase_date: document.getElementById('docA-date').value,
-    seller: document.getElementById('docA-seller').value
+    model: document.getElementById('doc-a-model').value,
+    serial_number: document.getElementById('doc-a-serial').value,
+    purchase_date: document.getElementById('doc-a-date').value
   };
 
   const docB = {
-    product: document.getElementById('docB-product').value,
-    brand: document.getElementById('docB-brand').value,
-    model: document.getElementById('docB-model').value,
-    serial_number: document.getElementById('docB-serial').value,
-    purchase_date: document.getElementById('docB-date').value,
-    seller: document.getElementById('docB-seller').value
+    model: document.getElementById('doc-b-model').value,
+    serial_number: document.getElementById('doc-b-serial').value,
+    purchase_date: document.getElementById('doc-b-date').value
   };
+
+  const badge = document.getElementById('radar-status-badge');
+  const emptyState = document.getElementById('radar-empty-state');
+  const resultWrapper = document.getElementById('radar-result-wrapper');
+
+  badge.textContent = 'Analyzing...';
+  emptyState.classList.add('hidden');
+  resultWrapper.classList.remove('hidden');
 
   try {
     const res = await fetch('/api/matcher/compare', {
@@ -375,47 +660,53 @@ async function executeRadarComparison() {
     });
 
     const data = await res.json();
-    renderDiffTable(data);
+    badge.textContent = data.status.toUpperCase();
+
+    renderRadarResults(data);
+    showToast(`Verification status: ${data.status.toUpperCase()}`);
   } catch (err) {
-    showToast(`Comparison error: ${err.message}`);
+    badge.textContent = 'Error';
+    showToast(`Radar error: ${err.message}`);
   }
 }
 
-function renderDiffTable(result) {
+function renderRadarResults(data) {
+  const scoreVal = document.getElementById('radar-score-val');
+  const statusTxt = document.getElementById('radar-match-status');
+  const summaryTxt = document.getElementById('radar-match-summary');
+  const circle = document.getElementById('radar-score-circle');
   const tbody = document.getElementById('diff-table-body');
-  const overallBadge = document.getElementById('radar-overall-status');
+
+  scoreVal.textContent = data.score || 0;
+  statusTxt.textContent = data.status === 'verified' ? 'IDENTITY VERIFIED' : (data.status === 'conflict' ? 'CONFLICT FLAGGED' : 'INSUFFICIENT MATCH');
+  summaryTxt.textContent = `Matched ${data.matched_fields.length} identity attributes. Conflicting fields: ${data.conflicting_fields.length}.`;
+
+  if (data.status === 'verified') {
+    circle.style.borderColor = 'var(--emerald-primary)';
+    circle.style.color = 'var(--emerald-primary)';
+  } else if (data.status === 'conflict') {
+    circle.style.borderColor = 'var(--crimson-primary)';
+    circle.style.color = 'var(--crimson-primary)';
+  } else {
+    circle.style.borderColor = 'var(--gold-primary)';
+    circle.style.color = 'var(--gold-primary)';
+  }
+
   tbody.innerHTML = '';
-
-  overallBadge.className = `radar-status-badge ${result.status}`;
-  overallBadge.textContent = result.status === 'verified' ? '✓ Identity Verified' : (result.status === 'conflict' ? '⚠️ Conflict Detected!' : 'Inconclusive');
-
-  const fields = [
-    { key: 'model', name: 'Model Number', strategy: 'Exact Normalization (Ignore hyphens/dots)' },
-    { key: 'serial_number', name: 'Serial Number', strategy: 'Fuzzy Levenshtein Edit Distance (≤2 chars)' },
-    { key: 'purchase_date', name: 'Purchase Date', strategy: 'ISO Date Parsing (YYYY-MM-DD)' },
-    { key: 'seller', name: 'Seller Name', strategy: 'Token Overlap & Corporate Suffix Stripping' },
-    { key: 'brand', name: 'Brand', strategy: 'Case-Insensitive Match' },
-    { key: 'product', name: 'Product Category', strategy: 'Subcategory Matching' }
-  ];
-
-  fields.forEach(f => {
-    const valA = result.document_a[f.key] || '—';
-    const valB = result.document_b[f.key] || '—';
-    const isConflict = (result.conflicting_fields || []).some(c => c.field === f.key);
-    const isMatch = (result.matched_fields || []).includes(f.key);
-
+  (data.field_results || []).forEach(f => {
     const tr = document.createElement('tr');
-    tr.className = isConflict ? 'diff-row-conflict' : (isMatch ? 'diff-row-match' : '');
-
-    let badgeHtml = '<span class="text-muted">—</span>';
-    if (isConflict) {
-      badgeHtml = '<span class="badge-diff-conflict">⚠️ CONFLICT</span>';
-    } else if (isMatch) {
-      badgeHtml = '<span class="badge-diff-match">✓ MATCH</span>';
+    let badgeHtml = '<span class="status-pill online"><span class="status-dot"></span> Match</span>';
+    if (f.result === 'conflict') {
+      badgeHtml = '<span class="status-pill offline" style="border-color:var(--crimson-border); color:var(--crimson-primary);"><span class="status-dot" style="background:var(--crimson-primary);"></span> Conflict</span>';
+    } else if (f.result === 'missing') {
+      badgeHtml = '<span class="status-pill" style="border-color:var(--border-color); color:var(--text-muted);"><span class="status-dot" style="background:var(--text-muted);"></span> Missing</span>';
     }
 
+    const valA = f.doc_a_val !== null ? f.doc_a_val : '<em>null</em>';
+    const valB = f.doc_b_val !== null ? f.doc_b_val : '<em>null</em>';
+
     tr.innerHTML = `
-      <td><strong>${f.name}</strong></td>
+      <td><strong>${f.field}</strong></td>
       <td class="font-mono">${valA}</td>
       <td class="font-mono">${valB}</td>
       <td><span class="text-muted" style="font-size:0.8rem;">${f.strategy}</span></td>
@@ -426,7 +717,7 @@ function renderDiffTable(result) {
 }
 
 /* ============================================================
-   5. APPLIANCE OBJECT VISION (YOLO)
+   7. APPLIANCE OBJECT VISION (YOLO)
    ============================================================ */
 function initApplianceVision() {
   const dropzone = document.getElementById('yolo-dropzone');
@@ -466,7 +757,6 @@ function initApplianceVision() {
   });
 
   btnClear.addEventListener('click', clearYoloInput);
-
   btnDetect.addEventListener('click', executeApplianceDetection);
 }
 
@@ -518,7 +808,6 @@ async function executeApplianceDetection() {
   const resultWrapper = document.getElementById('annotated-image-wrapper');
   const resultImg = document.getElementById('annotated-result-img');
   const countBadge = document.getElementById('yolo-count-badge');
-  const detectionsList = document.getElementById('detections-list-container');
 
   loading.classList.remove('hidden');
   emptyState.classList.add('hidden');
@@ -531,64 +820,88 @@ async function executeApplianceDetection() {
     } else if (state.currentYoloSamplePath) {
       formData.append('sample_path', state.currentYoloSamplePath);
     }
-    formData.append('annotate', 'true');
 
     const res = await fetch('/api/detector/detect', {
       method: 'POST',
       body: formData
     });
 
-    if (!res.ok) throw new Error(`Detection server returned ${res.status}`);
-    const data = await res.json();
+    if (!res.ok) throw new Error('Detection failed');
 
-    countBadge.textContent = `${data.count || 0} Detected`;
+    const data = await res.json();
+    loading.classList.add('hidden');
+    resultWrapper.classList.remove('hidden');
 
     if (data.annotated_image_base64) {
       resultImg.src = `data:image/jpeg;base64,${data.annotated_image_base64}`;
     }
+    countBadge.textContent = `${data.count} Detected`;
 
-    detectionsList.innerHTML = '';
-    (data.detections || []).forEach(d => {
-      const pill = document.createElement('div');
-      pill.className = 'detection-pill';
-      pill.innerHTML = `<span>🎯</span> ${d.label} (${Math.round((d.confidence || 0) * 100)}%) <small style="color:var(--text-muted);">[${d.source || 'yolo'}]</small>`;
-      detectionsList.appendChild(pill);
-    });
+    renderDetectionCards(data.detections || []);
+    showToast(`YOLO detected ${data.count} appliance(s)`);
 
-    resultWrapper.classList.remove('hidden');
-    showToast(`Detected ${data.count} appliance(s) via YOLOv8!`);
   } catch (err) {
-    showToast(`Detection error: ${err.message}`);
-    emptyState.classList.remove('hidden');
-  } finally {
     loading.classList.add('hidden');
+    emptyState.classList.remove('hidden');
+    showToast(`Detection error: ${err.message}`);
   }
 }
 
+function renderDetectionCards(detections) {
+  const container = document.getElementById('detection-boxes-list');
+  container.innerHTML = '';
+
+  if (!detections.length) {
+    container.innerHTML = '<p class="text-muted">No appliances localized in image.</p>';
+    return;
+  }
+
+  detections.forEach((d, idx) => {
+    const card = document.createElement('div');
+    card.className = 'detection-card';
+    card.innerHTML = `
+      <div class="detection-header">
+        <span class="detection-class">#${idx + 1} ${d.label}</span>
+        <span class="detection-conf">${intConf(d.confidence)}% Confidence</span>
+      </div>
+      <div class="detection-box font-mono">BBox: [${d.box.map(n => Math.round(n)).join(', ')}]</div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function intConf(val) {
+  return Math.round((val || 0) * 100);
+}
+
 /* ============================================================
-   6. PASSPORT VAULT & MODAL
+   8. PRODUCT REGISTRY (PASSPORT VAULT)
    ============================================================ */
 function initPassportVault() {
   const searchInput = document.getElementById('vault-search-input');
+  const roomFilter = document.getElementById('vault-room-filter');
   const statusFilter = document.getElementById('vault-status-filter');
   const btnRefresh = document.getElementById('btn-refresh-vault');
   const modal = document.getElementById('passport-modal');
   const btnCloseModal = document.getElementById('btn-close-modal');
 
-  searchInput.addEventListener('input', debounce(fetchVaultPassports, 300));
-  statusFilter.addEventListener('change', fetchVaultPassports);
-  btnRefresh.addEventListener('click', fetchVaultPassports);
-  btnCloseModal.addEventListener('click', () => modal.classList.add('hidden'));
+  if (searchInput) searchInput.addEventListener('input', fetchVaultPassports);
+  if (roomFilter) roomFilter.addEventListener('change', fetchVaultPassports);
+  if (statusFilter) statusFilter.addEventListener('change', fetchVaultPassports);
+  if (btnRefresh) btnRefresh.addEventListener('click', fetchVaultPassports);
 
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.classList.add('hidden');
-  });
+  if (btnCloseModal) btnCloseModal.addEventListener('click', () => modal.classList.add('hidden'));
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.add('hidden');
+    });
+  }
 }
 
 async function fetchVaultPassports() {
-  const q = document.getElementById('vault-search-input').value;
-  const status = document.getElementById('vault-status-filter').value;
-  const tbody = document.getElementById('vault-table-body');
+  const q = document.getElementById('vault-search-input')?.value || '';
+  const room = document.getElementById('vault-room-filter')?.value || '';
+  const status = document.getElementById('vault-status-filter')?.value || '';
 
   try {
     const params = new URLSearchParams();
@@ -597,7 +910,14 @@ async function fetchVaultPassports() {
 
     const res = await fetch(`/api/dpp/passports?${params.toString()}`);
     const data = await res.json();
-    renderVaultTable(data.passports || []);
+    let passports = data.passports || [];
+
+    // Filter by room if selected
+    if (room) {
+      passports = passports.filter(p => (p.room || '').toLowerCase() === room.toLowerCase());
+    }
+
+    renderVaultTable(passports);
   } catch (err) {
     console.error('Failed to fetch vault passports:', err);
   }
@@ -605,35 +925,36 @@ async function fetchVaultPassports() {
 
 function renderVaultTable(passports) {
   const tbody = document.getElementById('vault-table-body');
+  if (!tbody) return;
   tbody.innerHTML = '';
 
   if (!passports.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="text-muted" style="text-align:center; padding:2rem;">No passports match the current search criteria.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center; padding:2rem;">No products match the search criteria.</td></tr>';
     return;
   }
 
   passports.forEach(p => {
     const tr = document.createElement('tr');
-    const status = (p.identity_match && p.identity_match.status) || 'new_product';
+    const health = p.health_status || 'good';
 
-    let statusBadge = '<span class="status-pill online"><span class="status-dot"></span> Verified</span>';
-    if (status === 'conflict') {
-      statusBadge = '<span class="status-pill offline" style="border-color:var(--crimson-border); color:var(--crimson-primary);"><span class="status-dot" style="background:var(--crimson-primary);"></span> Conflict</span>';
-    } else if (status === 'new_product') {
-      statusBadge = '<span class="status-pill" style="border-color:var(--border-color); color:var(--gold-light);"><span class="status-dot" style="background:var(--gold-primary);"></span> New</span>';
+    let statusBadge = '<span class="status-pill online"><span class="status-dot"></span> Good</span>';
+    if (health === 'urgent' || health === 'expired') {
+      statusBadge = `<span class="status-pill offline" style="border-color:var(--crimson-border); color:var(--crimson-primary);"><span class="status-dot" style="background:var(--crimson-primary);"></span> ${health.toUpperCase()}</span>`;
+    } else if (health === 'attention') {
+      statusBadge = '<span class="status-pill" style="border-color:var(--border-color); color:var(--gold-light);"><span class="status-dot" style="background:var(--gold-primary);"></span> ATTENTION</span>';
     }
 
     tr.innerHTML = `
       <td class="font-mono"><strong>${p.passport_id || '—'}</strong></td>
       <td><strong>${p.product || '—'}</strong><br><small class="text-muted">${p.brand || '—'}</small></td>
+      <td><span class="item-room-badge">${p.room || 'Unassigned'}</span></td>
       <td class="font-mono">${p.model || '—'}</td>
       <td class="font-mono">${p.serial_number || '—'}</td>
-      <td class="font-mono">${p.purchase_date || '—'}</td>
-      <td>${p.purchase_price ? `${p.currency || 'INR'} ${Number(p.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</td>
-      <td>${p.seller || '—'}</td>
+      <td class="font-mono">${p.warranty_expiry_date || p.purchase_date || '—'}</td>
       <td>${statusBadge}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="viewPassportModal('${p.passport_id}')">View</button>
+        <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; margin-left:4px;" onclick="downloadClaimPack('${p.passport_id}')">Claim Pack</button>
         <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; color:var(--crimson-primary); border-color:var(--crimson-border); margin-left:4px;" onclick="deletePassport('${p.passport_id}')">Delete</button>
       </td>
     `;
@@ -647,11 +968,30 @@ window.deletePassport = async function(passportId) {
   try {
     const res = await fetch(`/api/dpp/passports/${passportId}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete passport');
-    showToast(`Passport ${passportId} removed from vault.`);
+    showToast(`Passport ${passportId} removed from registry.`);
     fetchVaultPassports();
-    refreshGlobalStats();
+    fetchHouseholdHealth();
   } catch (err) {
     showToast(`Delete error: ${err.message}`);
+  }
+};
+
+window.downloadClaimPack = async function(passportId) {
+  try {
+    const res = await fetch(`/api/household/claim-pack/${passportId}`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to generate claim pack');
+    const pack = await res.json();
+    
+    const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Warranty_Claim_Pack_${passportId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`🛡️ Warranty Claim Pack downloaded for ${pack.product.brand} ${pack.product.name}!`);
+  } catch (err) {
+    showToast(`Claim Pack error: ${err.message}`);
   }
 };
 
@@ -661,40 +1001,53 @@ window.viewPassportModal = async function(passportId) {
     if (!res.ok) throw new Error('Passport not found');
     const p = await res.json();
 
-    const status = (p.identity_match && p.identity_match.status) || 'new_product';
+    const health = p.health_status || 'good';
     let bannerHtml = '';
-    if (status === 'verified') {
-      bannerHtml = '<div class="cert-verification-banner verified"><div class="banner-icon">✓</div><div><span class="banner-title">Identity Verified</span><span class="banner-desc">Matched canonical product records.</span></div></div>';
-    } else if (status === 'conflict') {
-      bannerHtml = '<div class="cert-verification-banner conflict"><div class="banner-icon">⚠️</div><div><span class="banner-title">Conflict Flagged</span><span class="banner-desc">Discrepancy with existing records.</span></div></div>';
+    if (health === 'good') {
+      bannerHtml = '<div class="cert-verification-banner verified"><div class="banner-icon">✓</div><div><span class="banner-title">Active & Healthy</span><span class="banner-desc">Warranty active and maintenance on schedule.</span></div></div>';
+    } else if (health === 'attention' || health === 'urgent') {
+      bannerHtml = '<div class="cert-verification-banner conflict"><div class="banner-icon">⚠️</div><div><span class="banner-title">Action Required</span><span class="banner-desc">Warranty expiring soon or maintenance due.</span></div></div>';
     } else {
-      bannerHtml = '<div class="cert-verification-banner new_product"><div class="banner-icon">✨</div><div><span class="banner-title">Original Registration</span><span class="banner-desc">First canonical mint for this serial.</span></div></div>';
+      bannerHtml = '<div class="cert-verification-banner conflict" style="border-color:var(--crimson-border);"><div class="banner-icon">🔴</div><div><span class="banner-title">Warranty Expired</span><span class="banner-desc">Product warranty coverage has ended.</span></div></div>';
+    }
+
+    let docsHtml = '';
+    if (p.linked_documents && p.linked_documents.length) {
+      docsHtml = '<div style="margin-top:1rem;"><strong>Linked Documents:</strong><ul>';
+      p.linked_documents.forEach(d => {
+        docsHtml += `<li>${d.type.replace('_', ' ').toUpperCase()} (${d.source}) — ${d.snippet || ''}</li>`;
+      });
+      docsHtml += '</ul></div>';
     }
 
     const target = document.getElementById('modal-certificate-target');
     target.innerHTML = `
       <div class="certificate-card" style="margin:0;">
         <div class="cert-header">
-          <div class="cert-seal"><span class="seal-icon">🏆</span><span class="seal-text">DPP</span></div>
+          <div class="cert-seal"><span class="seal-icon">🏠</span><span class="seal-text">DPP</span></div>
           <div class="cert-title-group">
             <h3 class="cert-product-title">${p.product || 'Product'}</h3>
             <p class="cert-brand-subtitle">${p.brand || 'Brand'}</p>
           </div>
-          <div class="cert-id-box"><span class="id-label">ID</span><span class="id-value">${p.passport_id}</span></div>
+          <div class="cert-id-box"><span class="id-label">PASSPORT ID</span><span class="id-value font-mono">${p.passport_id}</span></div>
         </div>
         ${bannerHtml}
         <div class="cert-body-grid">
-          <div class="cert-field"><span class="field-label">Model</span><span class="field-value font-mono">${p.model || '—'}</span></div>
-          <div class="cert-field"><span class="field-label">Serial</span><span class="field-value font-mono gold-highlight">${p.serial_number || '—'}</span></div>
-          <div class="cert-field"><span class="field-label">Date</span><span class="field-value font-mono">${p.purchase_date || '—'}</span></div>
-          <div class="cert-field"><span class="field-label">Price</span><span class="field-value">${p.purchase_price ? `${p.currency || 'INR'} ${Number(p.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</span></div>
-          <div class="cert-field"><span class="field-label">Seller</span><span class="field-value">${p.seller || '—'}</span></div>
-          <div class="cert-field"><span class="field-label">Customer</span><span class="field-value">${p.customer_name || '—'}</span></div>
-          <div class="cert-field"><span class="field-label">Warranty</span><span class="field-value">${p.warranty || 'Standard'}</span></div>
-          <div class="cert-field"><span class="field-label">Category</span><span class="field-value">${p.category || 'Appliance'}</span></div>
+          <div class="cert-field"><span class="field-label">Room Location</span><span class="field-value">${p.room || 'Unassigned'}</span></div>
+          <div class="cert-field"><span class="field-label">Model Number</span><span class="field-value font-mono">${p.model || '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Serial Number</span><span class="field-value font-mono gold-highlight">${p.serial_number || '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Purchase Date</span><span class="field-value font-mono">${p.purchase_date || '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Warranty Expiry</span><span class="field-value font-mono">${p.warranty_expiry_date || p.warranty || '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Next Maintenance</span><span class="field-value font-mono">${p.next_maintenance_date || '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Purchase Price</span><span class="field-value">${p.purchase_price ? `${p.currency || 'INR'} ${Number(p.purchase_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</span></div>
+          <div class="cert-field"><span class="field-label">Merchant / Seller</span><span class="field-value">${p.seller || '—'}</span></div>
         </div>
+        ${docsHtml}
         <div class="cert-actions" style="margin-top:1.5rem;">
-          <button class="btn btn-primary" onclick="exportSinglePassportJson('${p.passport_id}')">
+          <button class="btn btn-primary" onclick="downloadClaimPack('${p.passport_id}')">
+            <span>🛡️</span> Download Claim Pack
+          </button>
+          <button class="btn btn-secondary" onclick="downloadSinglePassportJson(state.activePassportData || ${JSON.stringify(p).replace(/"/g, '&quot;')})">
             <span>📥</span> Export JSON
           </button>
         </div>
@@ -707,51 +1060,49 @@ window.viewPassportModal = async function(passportId) {
   }
 };
 
-window.exportSinglePassportJson = async function(passportId) {
-  try {
-    const res = await fetch(`/api/dpp/passports/${passportId}`);
-    const p = await res.json();
-    const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${passportId}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast(`Passport ${passportId} JSON exported!`);
-  } catch (e) {
-    showToast('Failed to export passport');
-  }
-};
+function downloadSinglePassportJson(p) {
+  const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${p.passport_id || 'passport'}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Passport ${p.passport_id} JSON exported!`);
+}
 
 /* ============================================================
-   7. STATS & UTILS
+   9. OFFLINE DETECTOR & TOAST UTILITIES
    ============================================================ */
-async function refreshGlobalStats() {
-  try {
-    const res = await fetch('/api/dpp/stats');
-    const stats = await res.json();
-    document.getElementById('stat-total').textContent = stats.total_passports || 0;
-    document.getElementById('stat-verified').textContent = stats.verified_matches || 0;
-    document.getElementById('stat-conflicts').textContent = stats.conflicts || 0;
-    document.getElementById('stat-brands').textContent = stats.unique_brands || 0;
-  } catch (err) {
-    console.error('Failed to refresh stats:', err);
+function initOfflineDetector() {
+  const banner = document.getElementById('offline-banner');
+
+  function updateStatus() {
+    if (!navigator.onLine) {
+      if (banner) banner.classList.remove('hidden');
+      showToast('🔒 Offline Mode — Device NPU active');
+    } else {
+      if (banner) banner.classList.add('hidden');
+    }
   }
+
+  window.addEventListener('online', updateStatus);
+  window.addEventListener('offline', updateStatus);
+  updateStatus();
 }
 
-function showToast(message) {
-  const toast = document.getElementById('toast');
-  const msgEl = document.getElementById('toast-msg');
-  msgEl.textContent = message;
-  toast.classList.remove('hidden');
-  setTimeout(() => toast.classList.add('hidden'), 3500);
-}
+function showToast(message, duration = 3500) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
 
-function debounce(func, wait) {
-  let timeout;
-  return function(...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `<span class="toast-icon">ℹ️</span> <span>${message}</span>`;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
 }

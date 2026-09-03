@@ -52,8 +52,8 @@ class TestAPIEndpoints(unittest.TestCase):
     def test_home_dashboard(self):
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("AI PRODUCT", res.text)
-        self.assertIn("Document Studio", res.text)
+        self.assertIn("HomeMind", res.text)
+        self.assertIn("Smart Capture", res.text)
 
     def test_passport_lifecycle(self):
         # Create

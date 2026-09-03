@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Product Guardian — Digital Product Passport & Identity Verification Engine</title>
-  <meta name="description" content="AI-powered Digital Product Passport (DPP) extraction, appliance object detection, and deterministic product identity conflict verification.">
+  <title>HomeMind — Your Phone Remembers Everything You Own</title>
+  <meta name="description" content="HomeMind — AI Household Intelligence, Digital Product Passport, warranty tracking, and product graph.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -12,16 +12,22 @@
   <link rel="icon" type="image/png" href="/static/images/icon.png">
 </head>
 <body>
+  <!-- Offline Mode Banner (Hidden by default) -->
+  <div id="offline-banner" class="offline-banner hidden">
+    <span class="offline-icon">🔒</span>
+    <span><strong>Offline Mode Active:</strong> All AI processing, OCR, and identity matching are running locally on your device NPU.</span>
+  </div>
+
   <!-- Header / Navigation Bar -->
   <header class="app-header">
     <div class="header-container">
       <div class="brand-group">
         <div class="brand-icon-wrapper">
-          <span class="brand-shield-icon">🛡️</span>
+          <span class="brand-shield-icon">🏠</span>
         </div>
         <div class="brand-text">
-          <h1 class="brand-title">AI PRODUCT <span class="gold-gradient-text">GUARDIAN</span></h1>
-          <p class="brand-tagline">Digital Product Passport & Verification Engine</p>
+          <h1 class="brand-title">HOME<span class="gold-gradient-text">MIND</span></h1>
+          <p class="brand-tagline">Your phone remembers everything you own.</p>
         </div>
       </div>
 
@@ -53,7 +59,21 @@
         <span class="metric-icon">📦</span>
         <div class="metric-data">
           <span class="metric-value" id="stat-total">{{ stats.total_passports }}</span>
-          <span class="metric-label">Passports in Vault</span>
+          <span class="metric-label">Household Products</span>
+        </div>
+      </div>
+      <div class="metric-card metric-conflicts" id="metric-attention">
+        <span class="metric-icon">⚠️</span>
+        <div class="metric-data">
+          <span class="metric-value" id="stat-attention">0</span>
+          <span class="metric-label">Needs Attention</span>
+        </div>
+      </div>
+      <div class="metric-card" id="metric-rooms">
+        <span class="metric-icon">🛋️</span>
+        <div class="metric-data">
+          <span class="metric-value" id="stat-rooms">{{ rooms|length }}</span>
+          <span class="metric-label">Active Rooms</span>
         </div>
       </div>
       <div class="metric-card metric-verified" id="metric-verified">
@@ -63,20 +83,6 @@
           <span class="metric-label">Verified Identities</span>
         </div>
       </div>
-      <div class="metric-card metric-conflicts" id="metric-conflicts">
-        <span class="metric-icon">⚠️</span>
-        <div class="metric-data">
-          <span class="metric-value" id="stat-conflicts">{{ stats.conflicts }}</span>
-          <span class="metric-label">Flagged Conflicts</span>
-        </div>
-      </div>
-      <div class="metric-card" id="metric-brands">
-        <span class="metric-icon">🏷️</span>
-        <div class="metric-data">
-          <span class="metric-value" id="stat-brands">{{ stats.unique_brands }}</span>
-          <span class="metric-label">Registered Brands</span>
-        </div>
-      </div>
     </div>
   </section>
 
@@ -84,27 +90,150 @@
   <main class="main-layout">
     <!-- Navigation Tabs -->
     <nav class="nav-tabs-bar" role="tablist">
-      <button class="nav-tab active" data-tab="tab-document-studio">
-        <span class="tab-icon">📄</span> Document Studio
+      <button class="nav-tab active" data-tab="tab-household-health">
+        <span class="tab-icon">🏠</span> Household Health
+      </button>
+      <button class="nav-tab" data-tab="tab-ask-house">
+        <span class="tab-icon">💬</span> Ask My House
+      </button>
+      <button class="nav-tab" data-tab="tab-document-studio">
+        <span class="tab-icon">📷</span> Smart Capture
       </button>
       <button class="nav-tab" data-tab="tab-conflict-radar">
-        <span class="tab-icon">⚡</span> Identity Matcher & Radar
+        <span class="tab-icon">⚡</span> Identity Matcher
       </button>
       <button class="nav-tab" data-tab="tab-appliance-vision">
-        <span class="tab-icon">👁️</span> Appliance Vision (YOLO)
+        <span class="tab-icon">👁️</span> Appliance Vision
       </button>
       <button class="nav-tab" data-tab="tab-passport-vault">
-        <span class="tab-icon">🛡️</span> Passport Vault
+        <span class="tab-icon">📦</span> Product Registry
       </button>
     </nav>
 
-    <!-- Tab 1: Document Intelligence Studio -->
-    <section class="tab-content active" id="tab-document-studio">
+    <!-- Tab 1: Household Health Dashboard -->
+    <section class="tab-content active" id="tab-household-health">
+      <div class="household-dashboard-grid">
+        <!-- Top Banner: Health Overview Cards -->
+        <div class="health-cards-row">
+          <div class="health-summary-card urgent">
+            <div class="summary-card-header">
+              <span class="summary-icon">🔴</span>
+              <span class="summary-title">Urgent Action</span>
+            </div>
+            <div class="summary-value" id="card-urgent-count">0</div>
+            <p class="summary-desc">Expired warranties & overdue service</p>
+          </div>
+
+          <div class="health-summary-card attention">
+            <div class="summary-card-header">
+              <span class="summary-icon">🟠</span>
+              <span class="summary-title">Upcoming</span>
+            </div>
+            <div class="summary-value" id="card-upcoming-count">0</div>
+            <p class="summary-desc">Maintenance & warranties (next 90 days)</p>
+          </div>
+
+          <div class="health-summary-card healthy">
+            <div class="summary-card-header">
+              <span class="summary-icon">🟢</span>
+              <span class="summary-title">Healthy</span>
+            </div>
+            <div class="summary-value" id="card-healthy-count">0</div>
+            <p class="summary-desc">Active warranties & clean health</p>
+          </div>
+        </div>
+
+        <div class="workspace-grid" style="margin-top: 1.5rem;">
+          <!-- Left: Attention Action Center -->
+          <div class="card glass-card">
+            <div class="card-header">
+              <h2 class="card-title"><span class="title-gold">⚠️</span> Household Attention Center</h2>
+              <span class="card-badge">Action Needed</span>
+            </div>
+            <p class="card-subtitle">Products requiring warranty review, maintenance, or consumable replacements.</p>
+            
+            <div id="attention-items-container" class="attention-items-list">
+              <div class="empty-state">Loading household health status...</div>
+            </div>
+          </div>
+
+          <!-- Right: Room Inventory Navigator & Upcoming Timeline -->
+          <div class="card glass-card">
+            <div class="card-header">
+              <h2 class="card-title"><span class="title-gold">🛋️</span> Room Navigator</h2>
+              <span class="card-badge">By Location</span>
+            </div>
+            <p class="card-subtitle">Explore appliances organized by room in your house.</p>
+
+            <div id="room-grid-container" class="room-grid">
+              <div class="empty-state">Loading rooms...</div>
+            </div>
+
+            <!-- Upcoming Events Stream -->
+            <div class="card-header" style="margin-top: 2rem;">
+              <h3 class="card-title" style="font-size: 1.1rem;"><span class="title-gold">📅</span> Upcoming 90-Day Timeline</h3>
+            </div>
+            <div id="timeline-container" class="timeline-stream">
+              <div class="empty-state">Loading event timeline...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: Ask My House (Natural Language Chat & Voice RAG) -->
+    <section class="tab-content" id="tab-ask-house">
+      <div class="card glass-card chat-workspace-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title"><span class="title-gold">💬</span> Ask My House</h2>
+            <p class="card-subtitle">Ask anything about your appliances, warranties, manuals, or service logs.</p>
+          </div>
+          <span class="card-badge">Grounded RAG AI</span>
+        </div>
+
+        <!-- Preset Suggested Question Chips -->
+        <div class="suggested-chips-wrapper">
+          <span class="chips-label">Try asking:</span>
+          <div class="sample-chips-container" id="ask-suggested-chips">
+            <button class="sample-chip" onclick="askPreset('What needs my attention this month?')">What needs my attention this month?</button>
+            <button class="sample-chip" onclick="askPreset('When does my washing machine warranty expire?')">When does my washing machine warranty expire?</button>
+            <button class="sample-chip" onclick="askPreset('Which appliances are in the Living Room?')">Which appliances are in the Living Room?</button>
+            <button class="sample-chip" onclick="askPreset('Show me all products bought in 2026')">Show me all products bought in 2026</button>
+          </div>
+        </div>
+
+        <!-- Chat Stream Window -->
+        <div id="chat-messages-container" class="chat-messages-window">
+          <div class="chat-message ai-message">
+            <div class="message-avatar">🏠</div>
+            <div class="message-content">
+              <p>Hello! I am <strong>HomeMind</strong>, your household AI memory. I remember every invoice, warranty card, manual, and service log for everything you own.</p>
+              <p>How can I help you today? You can type a question below or tap the 🎤 <strong>Voice Input</strong> button to speak naturally.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Bar with Voice -->
+        <div class="chat-input-bar">
+          <button id="btn-voice-mic" class="btn-voice-mic" title="Tap to speak voice question">
+            <span class="mic-icon">🎤</span>
+          </button>
+          <input type="text" id="ask-input" class="chat-input-field" placeholder="Ask your house (e.g. When does my AC warranty expire?)...">
+          <button id="btn-send-ask" class="btn btn-primary btn-send-chat">
+            <span>Send</span> ➔
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Smart Capture (Document Intelligence Studio) -->
+    <section class="tab-content" id="tab-document-studio">
       <div class="workspace-grid">
         <!-- Left: Upload & Sample Picker -->
         <div class="card glass-card">
           <div class="card-header">
-            <h2 class="card-title"><span class="title-gold">01</span> Document Input</h2>
+            <h2 class="card-title"><span class="title-gold">01</span> Smart Capture</h2>
             <span class="card-badge">OCR + Checkbox Reasoning</span>
           </div>
 
@@ -118,130 +247,141 @@
 
           <!-- Drag and Drop Zone -->
           <div class="dropzone" id="dpp-dropzone">
-            <input type="file" id="dpp-file-input" accept="image/*" class="file-input-hidden">
             <div class="dropzone-content">
-              <span class="dropzone-icon">📁</span>
-              <p class="dropzone-text">Drag & drop document image here or <span class="gold-link">browse</span></p>
-              <p class="dropzone-hint">Supports Warranty Cards, Tax Invoices, Receipts (PNG, JPG, WEBP)</p>
+              <div class="drop-icon">📷</div>
+              <h3>Scan Document or Label</h3>
+              <p>Drag & drop warranty card, invoice, receipt, or select sample above</p>
+              <button class="btn btn-secondary">Browse File</button>
             </div>
-            <div class="preview-container hidden" id="dpp-preview-wrapper">
-              <img id="dpp-image-preview" src="" alt="Document Preview" class="document-preview-img">
-              <button class="btn-remove-preview" id="btn-dpp-remove-preview" title="Clear image">×</button>
+            <input type="file" id="dpp-file-input" accept="image/*" class="hidden">
+
+            <!-- Selected Image Preview Container -->
+            <div id="dpp-preview-wrapper" class="preview-wrapper hidden">
+              <img id="dpp-image-preview" src="" alt="Document Preview">
+              <button class="btn-remove-preview" id="btn-dpp-remove-preview">×</button>
             </div>
           </div>
 
-          <div class="action-buttons-group">
-            <button class="btn btn-primary" id="btn-run-extraction" disabled>
-              <span class="btn-icon">⚡</span> Extract Digital Passport
+          <!-- Room Selector for New Product -->
+          <div class="form-group" style="margin-top: 1rem;">
+            <label class="section-label">Assign to Household Room:</label>
+            <select id="dpp-room-select" class="form-select">
+              <option value="Living Room">Living Room</option>
+              <option value="Kitchen">Kitchen</option>
+              <option value="Bedroom">Bedroom</option>
+              <option value="Bathroom">Bathroom</option>
+              <option value="Utility" selected>Utility</option>
+              <option value="Garage">Garage</option>
+              <option value="Office">Office</option>
+              <option value="Balcony">Balcony</option>
+            </select>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="card-actions">
+            <button class="btn btn-primary btn-block" id="btn-run-extraction" disabled>
+              <span class="btn-icon">✨</span> Extract Digital Passport
             </button>
-            <button class="btn btn-secondary" id="btn-clear-dpp">Clear</button>
+            <button class="btn btn-secondary" id="btn-clear-dpp">Reset</button>
           </div>
         </div>
 
-        <!-- Right: Extraction & Passport Certificate -->
+        <!-- Right: Digital Product Passport Result Studio -->
         <div class="card glass-card">
           <div class="card-header">
-            <h2 class="card-title"><span class="title-gold">02</span> Extracted Passport & Verification</h2>
-            <span class="card-badge gold-badge" id="extraction-status-badge">Awaiting Input</span>
+            <h2 class="card-title"><span class="title-gold">02</span> Household Product Passport</h2>
+            <span class="card-badge" id="extraction-status-badge">Standby</span>
           </div>
 
-          <!-- Loading Spinner -->
-          <div class="loading-state hidden" id="dpp-loading-state">
+          <!-- Loading State Animation -->
+          <div id="dpp-loading-state" class="loading-state hidden">
             <div class="spinner"></div>
-            <p class="loading-msg">Analyzing document via OCR & Multimodal VLM...</p>
-            <p class="loading-submsg">Executing checkbox discrimination and serial verification</p>
+            <p>Running Neural OCR & Multimodal Reasoning...</p>
+            <small class="text-muted">Filtering unselected checkboxes & extracting serial numbers</small>
           </div>
 
-          <!-- Extraction Output Container -->
-          <div class="output-container" id="dpp-output-container">
-            <div class="empty-state" id="dpp-empty-state">
-              <span class="empty-icon">🛡️</span>
-              <p>Select a sample document above or upload a warranty card to generate its Digital Product Passport.</p>
-            </div>
+          <!-- Empty State Placeholder -->
+          <div id="dpp-empty-state" class="empty-state">
+            <span class="empty-icon">📄</span>
+            <p>Scan a document or choose a sample to generate a Digital Product Passport.</p>
+          </div>
 
-            <!-- Result Passport Card -->
-            <div class="passport-certificate-wrapper hidden" id="passport-result-wrapper">
-              <!-- Passport Card -->
-              <div class="certificate-card" id="certificate-card-target">
-                <div class="cert-header">
-                  <div class="cert-seal">
-                    <span class="seal-icon">🏆</span>
-                    <span class="seal-text">OFFICIAL DPP</span>
-                  </div>
-                  <div class="cert-title-group">
-                    <h3 class="cert-product-title" id="cert-product">Washing Machine</h3>
-                    <p class="cert-brand-subtitle" id="cert-brand">LG Electronics</p>
-                  </div>
-                  <div class="cert-id-box">
-                    <span class="id-label">PASSPORT ID</span>
-                    <span class="id-value" id="cert-id">PP-20260902-1</span>
-                  </div>
+          <!-- Passport Certificate Output Card -->
+          <div id="dpp-certificate-result" class="certificate-wrapper hidden">
+            <div class="certificate-card">
+              <div class="cert-header">
+                <div class="cert-seal">
+                  <span class="seal-icon">🏆</span>
+                  <span class="seal-text">DPP</span>
                 </div>
-
-                <div class="cert-body-grid">
-                  <div class="cert-field">
-                    <span class="field-label">Model Number</span>
-                    <span class="field-value font-mono" id="cert-model">T75-SKSF1Z</span>
-                  </div>
-                  <div class="cert-field">
-                    <span class="field-label">Serial Number</span>
-                    <span class="field-value font-mono gold-highlight" id="cert-serial">LG123456789</span>
-                  </div>
-                  <div class="cert-field">
-                    <span class="field-label">Purchase Date</span>
-                    <span class="field-value font-mono" id="cert-date">2026-08-12</span>
-                  </div>
-                  <div class="cert-field">
-                    <span class="field-label">Warranty Term</span>
-                    <span class="field-value" id="cert-warranty">2-YEAR Standard</span>
-                  </div>
-                  <div class="cert-field">
-                    <span class="field-label">Purchase Price</span>
-                    <span class="field-value" id="cert-price">INR 28,500.00</span>
-                  </div>
-                  <div class="cert-field">
-                    <span class="field-label">Authorized Seller</span>
-                    <span class="field-value" id="cert-seller">Best Electrical Store</span>
-                  </div>
-                  <div class="cert-field">
-                    <span class="field-label">Customer Name</span>
-                    <span class="field-value" id="cert-customer">Rohan Sharma</span>
-                  </div>
-                  <div class="cert-field">
-                    <span class="field-label">Document Type</span>
-                    <span class="field-value" id="cert-doc-type">Warranty Registration Card</span>
-                  </div>
+                <div class="cert-title-group">
+                  <h3 class="cert-product-title" id="cert-product">Washing Machine</h3>
+                  <p class="cert-brand-subtitle" id="cert-brand">LG</p>
                 </div>
-
-                <!-- Identity Verification Banner -->
-                <div class="cert-verification-banner verified" id="cert-match-banner">
-                  <div class="banner-icon" id="banner-icon">✓</div>
-                  <div class="banner-text-group">
-                    <span class="banner-title" id="banner-title">Identity Status: Verified Match</span>
-                    <span class="banner-desc" id="banner-desc">Matched against existing invoice record. All serials, dates, and models align.</span>
-                  </div>
-                </div>
-
-                <!-- Checkbox Evidence Quote -->
-                <div class="cert-evidence-box" id="cert-evidence-box">
-                  <span class="evidence-tag">Checkbox Reasoning:</span>
-                  <span class="evidence-text" id="cert-evidence-text">Explicit checkmark detected beside Washing Machine category.</span>
-                </div>
-
-                <!-- Footer Barcode -->
-                <div class="cert-footer">
-                  <div class="barcode-graphic font-mono" id="cert-barcode">|| | ||| || |||| || ||| || ||||</div>
-                  <span class="security-seal-text">🔒 Cryptographically Linked & Hash-Protected</span>
+                <div class="cert-id-box">
+                  <span class="id-label">PASSPORT ID</span>
+                  <span class="id-value font-mono" id="cert-id">PP-2026-0001</span>
                 </div>
               </div>
 
+              <!-- Verification Badge -->
+              <div class="cert-verification-banner verified" id="cert-verification-banner">
+                <div class="banner-icon">✓</div>
+                <div>
+                  <span class="banner-title" id="cert-verification-title">Identity Verified</span>
+                  <span class="banner-desc" id="cert-verification-desc">Matched canonical product records.</span>
+                </div>
+              </div>
+
+              <div class="cert-body-grid">
+                <div class="cert-field">
+                  <span class="field-label">Model Number</span>
+                  <span class="field-value font-mono" id="cert-model">—</span>
+                </div>
+                <div class="cert-field">
+                  <span class="field-label">Serial Number</span>
+                  <span class="field-value font-mono gold-highlight" id="cert-serial">—</span>
+                </div>
+                <div class="cert-field">
+                  <span class="field-label">Purchase Date</span>
+                  <span class="field-value font-mono" id="cert-date">—</span>
+                </div>
+                <div class="cert-field">
+                  <span class="field-label">Purchase Price</span>
+                  <span class="field-value" id="cert-price">—</span>
+                </div>
+                <div class="cert-field">
+                  <span class="field-label">Merchant / Seller</span>
+                  <span class="field-value" id="cert-seller">—</span>
+                </div>
+                <div class="cert-field">
+                  <span class="field-label">Customer Name</span>
+                  <span class="field-value" id="cert-customer">—</span>
+                </div>
+                <div class="cert-field">
+                  <span class="field-label">Warranty Expiry</span>
+                  <span class="field-value font-mono" id="cert-warranty-expiry">—</span>
+                </div>
+                <div class="cert-field">
+                  <span class="field-label">Room Location</span>
+                  <span class="field-value" id="cert-room">—</span>
+                </div>
+              </div>
+
+              <!-- OCR Evidence Text Snippet Drawer -->
+              <div class="cert-evidence-box">
+                <span class="evidence-label">Raw Text Evidence Snippet:</span>
+                <pre class="evidence-snippet" id="cert-ocr-snippet">Waiting for scan...</pre>
+              </div>
+
+              <!-- Export / Save Action -->
               <div class="cert-actions">
-                <button class="btn btn-secondary" id="btn-export-dpp-json">
+                <button class="btn btn-primary" id="btn-save-passport">
+                  <span>💾</span> View in Product Registry
+                </button>
+                <button class="btn btn-secondary" id="btn-export-json">
                   <span>📥</span> Export JSON
                 </button>
-                <button class="btn btn-primary" id="btn-jump-to-matcher">
-                  <span>⚡</span> Compare in Radar
-                </button>
               </div>
             </div>
           </div>
@@ -249,196 +389,230 @@
       </div>
     </section>
 
-    <!-- Tab 2: Identity Matcher & Conflict Radar -->
+    <!-- Tab 4: Identity Matcher & Conflict Radar -->
     <section class="tab-content" id="tab-conflict-radar">
-      <div class="card glass-card">
-        <div class="card-header">
-          <div>
-            <h2 class="card-title"><span class="title-gold">⚡</span> Deterministic Identity Matcher & Conflict Radar</h2>
-            <p class="card-subtitle">Side-by-side multi-document conflict detection (Levenshtein fuzzy serial match & token containment)</p>
+      <div class="workspace-grid">
+        <!-- Compare Inputs -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="title-gold">⚡</span> Identity Matcher</h2>
+            <span class="card-badge">Fuzzy Levenshtein Engine</span>
           </div>
-          <div class="radar-status-badge" id="radar-overall-status">Ready to Compare</div>
-        </div>
+          <p class="card-subtitle">Compare two documents or OCR extractions to verify if they represent the same physical product.</p>
 
-        <!-- Document Selection Row -->
-        <div class="compare-grid">
-          <!-- Document A Column -->
-          <div class="compare-col">
-            <h3 class="col-title">Document A (e.g. Warranty Card)</h3>
+          <div class="side-by-side-inputs">
+            <!-- Document A -->
             <div class="doc-input-box">
-              <label class="field-label">Product Name</label>
-              <input type="text" id="docA-product" class="input-field" value="Washing Machine">
-              <label class="field-label">Brand</label>
-              <input type="text" id="docA-brand" class="input-field" value="LG">
-              <label class="field-label">Model Number</label>
-              <input type="text" id="docA-model" class="input-field" value="T75-SKSF1Z">
-              <label class="field-label">Serial Number</label>
-              <input type="text" id="docA-serial" class="input-field font-mono" value="LG123456789">
-              <label class="field-label">Purchase Date</label>
-              <input type="text" id="docA-date" class="input-field font-mono" value="2026-08-12">
-              <label class="field-label">Seller Name</label>
-              <input type="text" id="docA-seller" class="input-field" value="Best Electrical Store">
+              <h3>Document A (e.g. Invoice)</h3>
+              <div class="form-group">
+                <label>Model Number:</label>
+                <input type="text" id="doc-a-model" class="form-input" value="T75-SKSF1Z">
+              </div>
+              <div class="form-group">
+                <label>Serial Number:</label>
+                <input type="text" id="doc-a-serial" class="form-input" value="LG123456789">
+              </div>
+              <div class="form-group">
+                <label>Purchase Date:</label>
+                <input type="text" id="doc-a-date" class="form-input" value="2026-08-12">
+              </div>
+            </div>
+
+            <!-- Document B -->
+            <div class="doc-input-box">
+              <h3>Document B (e.g. Warranty Card)</h3>
+              <div class="form-group">
+                <label>Model Number:</label>
+                <input type="text" id="doc-b-model" class="form-input" value="T75SKSF1Z">
+              </div>
+              <div class="form-group">
+                <label>Serial Number:</label>
+                <input type="text" id="doc-b-serial" class="form-input" value="LG123456789">
+              </div>
+              <div class="form-group">
+                <label>Purchase Date:</label>
+                <input type="text" id="doc-b-date" class="form-input" value="12/08/2026">
+              </div>
             </div>
           </div>
 
-          <!-- Center Compare Trigger -->
-          <div class="compare-center-action">
-            <button class="btn-compare-pulse" id="btn-run-comparison" title="Execute Comparison">
-              <span>⚡</span>
-              <span class="compare-btn-label">COMPARE</span>
+          <div class="card-actions">
+            <button class="btn btn-primary btn-block" id="btn-run-match">
+              <span>⚡</span> Run Identity Verification Match
             </button>
-            <div class="preset-buttons">
-              <button class="btn-preset" id="btn-preset-verified">Preset: Verified Match</button>
-              <button class="btn-preset btn-preset-danger" id="btn-preset-conflict">Preset: Serial Conflict</button>
-            </div>
-          </div>
-
-          <!-- Document B Column -->
-          <div class="compare-col">
-            <h3 class="col-title">Document B (e.g. Purchase Invoice)</h3>
-            <div class="doc-input-box">
-              <label class="field-label">Product Name</label>
-              <input type="text" id="docB-product" class="input-field" value="Washing Machine">
-              <label class="field-label">Brand</label>
-              <input type="text" id="docB-brand" class="input-field" value="LG">
-              <label class="field-label">Model Number</label>
-              <input type="text" id="docB-model" class="input-field" value="T75SKSF1Z">
-              <label class="field-label">Serial Number</label>
-              <input type="text" id="docB-serial" class="input-field font-mono" value="LG123456789">
-              <label class="field-label">Purchase Date</label>
-              <input type="text" id="docB-date" class="input-field font-mono" value="12/08/2026">
-              <label class="field-label">Seller Name</label>
-              <input type="text" id="docB-seller" class="input-field" value="Best Electrical Store Sdn Bhd">
-            </div>
           </div>
         </div>
 
-        <!-- Radar Comparison Diff Results Table -->
-        <div class="radar-results-wrapper" id="radar-results-wrapper">
-          <h3 class="results-table-title">Field Comparison & Conflict Analysis Matrix</h3>
-          <table class="diff-table">
-            <thead>
-              <tr>
-                <th>Identity Field</th>
-                <th>Document A Value</th>
-                <th>Document B Value</th>
-                <th>Comparison Strategy</th>
-                <th>Verification Result</th>
-              </tr>
-            </thead>
-            <tbody id="diff-table-body">
-              <!-- Dynamically populated via dashboard.js -->
-            </tbody>
-          </table>
+        <!-- Radar Diff Results -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="title-gold">📊</span> Match Radar Analysis</h2>
+            <span class="card-badge" id="radar-status-badge">Standby</span>
+          </div>
+
+          <div id="radar-empty-state" class="empty-state">
+            <span class="empty-icon">⚡</span>
+            <p>Click "Run Identity Verification Match" to evaluate document similarity and conflict score.</p>
+          </div>
+
+          <div id="radar-result-wrapper" class="radar-results hidden">
+            <!-- Score Overview Meter -->
+            <div class="score-meter-card">
+              <div class="score-circle" id="radar-score-circle">
+                <span class="score-value" id="radar-score-val">0</span>
+                <span class="score-label">MATCH SCORE</span>
+              </div>
+              <div class="score-meta">
+                <h3 id="radar-match-status">DEVIATION DETECTED</h3>
+                <p id="radar-match-summary">Matching model & fuzzy serial number...</p>
+              </div>
+            </div>
+
+            <!-- Field Comparison Diff Matrix -->
+            <div class="diff-table-wrapper">
+              <table class="diff-table">
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>Document A</th>
+                    <th>Document B</th>
+                    <th>Strategy</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody id="diff-table-body">
+                  <!-- JS injected rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Tab 3: Appliance Object Vision (YOLO) -->
+    <!-- Tab 5: Appliance Vision (YOLO) -->
     <section class="tab-content" id="tab-appliance-vision">
       <div class="workspace-grid">
-        <!-- Left: Upload Appliance Photo -->
+        <!-- Detection Inputs -->
         <div class="card glass-card">
           <div class="card-header">
-            <h2 class="card-title"><span class="title-gold">👁️</span> Appliance Photo Input</h2>
-            <span class="card-badge">YOLOv8 + Semantic Fallback</span>
+            <h2 class="card-title"><span class="title-gold">👁️</span> Appliance Vision</h2>
+            <span class="card-badge">Ultralytics YOLO</span>
           </div>
 
           <div class="samples-selector-wrapper">
             <label class="section-label">1-Click Test Photos:</label>
             <div class="sample-chips-container" id="yolo-sample-chips">
-              <button class="sample-chip loading" disabled>Loading test assets...</button>
+              <button class="sample-chip loading" disabled>Loading photos...</button>
             </div>
           </div>
 
           <div class="dropzone" id="yolo-dropzone">
-            <input type="file" id="yolo-file-input" accept="image/*" class="file-input-hidden">
             <div class="dropzone-content">
-              <span class="dropzone-icon">📷</span>
-              <p class="dropzone-text">Upload photograph of physical appliance</p>
-              <p class="dropzone-hint">Washing Machine, Refrigerator, Microwave, Oven, TV</p>
+              <div class="drop-icon">📷</div>
+              <h3>Upload Appliance Photograph</h3>
+              <p>Drag & drop photo of washing machine, refrigerator, microwave, etc.</p>
+              <button class="btn btn-secondary">Browse Photo</button>
             </div>
-            <div class="preview-container hidden" id="yolo-preview-wrapper">
-              <img id="yolo-image-preview" src="" alt="Appliance Preview" class="document-preview-img">
+            <input type="file" id="yolo-file-input" accept="image/*" class="hidden">
+
+            <div id="yolo-preview-wrapper" class="preview-wrapper hidden">
+              <img id="yolo-image-preview" src="" alt="Appliance Photo Preview">
               <button class="btn-remove-preview" id="btn-yolo-remove-preview">×</button>
             </div>
           </div>
 
-          <div class="action-buttons-group">
-            <button class="btn btn-primary" id="btn-run-detection" disabled>
-              <span class="btn-icon">👁️</span> Run Object Localization
+          <div class="card-actions">
+            <button class="btn btn-primary btn-block" id="btn-run-detection" disabled>
+              <span>👁️</span> Detect Appliance Objects
             </button>
-            <button class="btn btn-secondary" id="btn-clear-yolo">Clear</button>
+            <button class="btn btn-secondary" id="btn-clear-yolo">Reset</button>
           </div>
         </div>
 
-        <!-- Right: Detection Bounding Box Visualizer -->
+        <!-- Detection Results with Bounding Box Overlay -->
         <div class="card glass-card">
           <div class="card-header">
-            <h2 class="card-title"><span class="title-gold">02</span> Neural Vision Output</h2>
-            <span class="card-badge gold-badge" id="yolo-count-badge">0 Detections</span>
+            <h2 class="card-title"><span class="title-gold">📍</span> Object Bounding Boxes</h2>
+            <span class="card-badge" id="yolo-count-badge">0 Detected</span>
           </div>
 
-          <div class="loading-state hidden" id="yolo-loading-state">
+          <div id="yolo-loading-state" class="loading-state hidden">
             <div class="spinner"></div>
-            <p class="loading-msg">Running YOLOv8 inference & IoU NMS...</p>
+            <p>Executing YOLO Appliance Localization...</p>
           </div>
 
-          <div class="yolo-output-container" id="yolo-output-container">
-            <div class="empty-state" id="yolo-empty-state">
-              <span class="empty-icon">📷</span>
-              <p>Upload a photograph to detect home appliances and extract bounding box coordinates.</p>
-            </div>
+          <div id="yolo-empty-state" class="empty-state">
+            <span class="empty-icon">🖼️</span>
+            <p>Upload a photo or select a sample to detect appliance bounding boxes.</p>
+          </div>
 
-            <div class="annotated-image-wrapper hidden" id="annotated-image-wrapper">
-              <img id="annotated-result-img" src="" alt="Annotated Appliance" class="annotated-img">
-              <div class="detections-list-wrapper" id="detections-list-container">
-                <!-- Populated via JS -->
-              </div>
+          <div id="annotated-image-wrapper" class="annotated-wrapper hidden">
+            <img id="annotated-result-img" src="" alt="Annotated Detection Result">
+            <div id="detection-boxes-list" class="detection-boxes-list">
+              <!-- JS injected detection cards -->
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Tab 4: Passport Vault -->
+    <!-- Tab 6: Product Registry (Passport Vault) -->
     <section class="tab-content" id="tab-passport-vault">
       <div class="card glass-card">
         <div class="card-header">
           <div>
-            <h2 class="card-title"><span class="title-gold">🛡️</span> Digital Product Passport Vault</h2>
-            <p class="card-subtitle">Persistent registry of verified product identities and flagged conflict logs</p>
+            <h2 class="card-title"><span class="title-gold">📦</span> Household Product Registry</h2>
+            <p class="card-subtitle">Canonical list of all registered household appliances, warranties, and room assignments.</p>
           </div>
-          <div class="vault-controls">
-            <input type="text" id="vault-search-input" class="search-input" placeholder="Search brand, model, serial...">
-            <select id="vault-status-filter" class="filter-select">
-              <option value="">All Statuses</option>
-              <option value="verified">Verified Matches</option>
-              <option value="conflict">Conflicts Only</option>
-              <option value="new_product">New Registrations</option>
+          <button class="btn btn-secondary" id="btn-refresh-vault">
+            <span>🔄</span> Refresh
+          </button>
+        </div>
+
+        <!-- Filter and Search Toolbar -->
+        <div class="vault-toolbar">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="vault-search-input" class="search-input" placeholder="Search by brand, model, serial, seller, room...">
+          </div>
+          <div class="filter-group">
+            <select id="vault-room-filter" class="filter-select">
+              <option value="">All Rooms</option>
+              <option value="Living Room">Living Room</option>
+              <option value="Kitchen">Kitchen</option>
+              <option value="Bedroom">Bedroom</option>
+              <option value="Utility">Utility</option>
+              <option value="Garage">Garage</option>
+              <option value="Office">Office</option>
             </select>
-            <button class="btn btn-secondary" id="btn-refresh-vault">↻ Refresh</button>
+            <select id="vault-status-filter" class="filter-select">
+              <option value="">All Health Statuses</option>
+              <option value="good">🟢 Good Health</option>
+              <option value="attention">🟠 Attention Needed</option>
+              <option value="urgent">🔴 Urgent Action</option>
+              <option value="expired">🔴 Expired Warranty</option>
+            </select>
           </div>
         </div>
 
         <!-- Vault Table -->
-        <div class="table-responsive">
+        <div class="vault-table-wrapper">
           <table class="vault-table">
             <thead>
               <tr>
                 <th>Passport ID</th>
                 <th>Product & Brand</th>
+                <th>Room</th>
                 <th>Model</th>
                 <th>Serial Number</th>
-                <th>Purchase Date</th>
-                <th>Price</th>
-                <th>Seller</th>
-                <th>Identity Status</th>
+                <th>Warranty Expiry</th>
+                <th>Health Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="vault-table-body">
-              <!-- Populated via JS -->
+              <!-- JS Injected rows -->
             </tbody>
           </table>
         </div>
@@ -446,21 +620,18 @@
     </section>
   </main>
 
-  <!-- Modal View Passport Certificate -->
-  <div class="modal-overlay hidden" id="passport-modal">
+  <!-- Detailed Passport Certificate Modal -->
+  <div id="passport-modal" class="modal-backdrop hidden">
     <div class="modal-card">
       <button class="modal-close" id="btn-close-modal">×</button>
       <div id="modal-certificate-target">
-        <!-- Rendered passport certificate -->
+        <!-- JS Injected Certificate -->
       </div>
     </div>
   </div>
 
-  <!-- Toast Notification -->
-  <div class="toast-notification hidden" id="toast">
-    <span class="toast-icon">ℹ️</span>
-    <span class="toast-message" id="toast-msg">Notification message</span>
-  </div>
+  <!-- Toast Notification System -->
+  <div id="toast-container" class="toast-container"></div>
 
   <script src="/static/js/dashboard.js"></script>
 </body>
