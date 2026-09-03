@@ -1,12 +1,21 @@
 """
 HomeMind — Household Intelligence API Routes
 Provides endpoints for household health, attention center, room inventory,
-event timeline, and warranty claim pack generation.
+event timeline, warranty claim pack generation, compatibility scanner, and technician service mode.
 """
 
+import os
+import io
+import json
+import base64
+import tempfile
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from pydantic import BaseModel
 
+import qrcode
+
+from app.config import DATA_DIR
 from app.core.passport_store import get_passport_store
 from app.core.household_engine import (
     compute_product_health,
@@ -16,9 +25,27 @@ from app.core.household_engine import (
     generate_warranty_claim_pack,
     get_household_summary
 )
+from app.core.compatibility_engine import evaluate_compatibility
 
 router = APIRouter(prefix="/api/household", tags=["Household Intelligence"])
 store = get_passport_store()
+
+
+def _generate_qr_data_url(data_str: str) -> str:
+    """Generate base64 PNG data URL for a given string using qrcode."""
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=7,
+        border=2,
+    )
+    qr.add_data(data_str)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0F172A", back_color="#FFFFFF")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/png;base64,{b64_str}"
 
 
 @router.get("/health")
@@ -110,3 +137,86 @@ async def warranty_claim_pack(passport_id: str):
         raise HTTPException(status_code=404, detail="Product not found")
     pack = generate_warranty_claim_pack(product)
     return pack
+
+
+@router.get("/service-pass/{passport_id}")
+async def get_service_pass(passport_id: str):
+    """
+    Generate a Technician Service Pass with full appliance history and scannable QR code.
+    Technician can scan the QR code to load the maintenance profile on their device.
+    """
+    product = store.get_by_id(passport_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    health = compute_product_health(product)
+
+    # Compact JSON payload for QR code
+    qr_payload = {
+        "type": "HomeMind_Service_Pass",
+        "passport_id": product.get("passport_id"),
+        "product": f"{product.get('brand')} {product.get('product')}",
+        "model": product.get("model"),
+        "serial": product.get("serial_number"),
+        "warranty": product.get("warranty"),
+        "warranty_expiry": product.get("warranty_expiry_date"),
+        "health": health.get("health_status"),
+        "services_count": len(product.get("events", []))
+    }
+
+    qr_data_url = _generate_qr_data_url(json.dumps(qr_payload))
+
+    briefing = {
+        "passport_id": product.get("passport_id"),
+        "product": product.get("product"),
+        "brand": product.get("brand"),
+        "model": product.get("model"),
+        "serial_number": product.get("serial_number"),
+        "room": product.get("room", "Unassigned"),
+        "purchase_date": product.get("purchase_date"),
+        "seller": product.get("seller"),
+        "invoice_number": product.get("invoice_number"),
+        "warranty": product.get("warranty"),
+        "warranty_expiry_date": product.get("warranty_expiry_date"),
+        "health_status": health.get("health_status"),
+        "alerts": health.get("alerts", []),
+        "service_history": product.get("events", []),
+        "linked_documents": product.get("linked_documents", []),
+        "qr_image_data_url": qr_data_url
+    }
+
+    return briefing
+
+
+@router.post("/compatibility/scan")
+async def scan_compatibility(
+    file: Optional[UploadFile] = File(None),
+    part_text: Optional[str] = Form("")
+):
+    """
+    Scan a replacement part, consumable, remote, or filter.
+    Evaluates against all registered household appliances and returns confidence & recommendation.
+    """
+    tmp_path = None
+    try:
+        if file and file.filename:
+            suffix = os.path.splitext(file.filename)[1] or ".jpg"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=str(DATA_DIR)) as tmp:
+                content = await file.read()
+                tmp.write(content)
+                tmp_path = tmp.name
+
+        products = store.get_all()
+        verdict = evaluate_compatibility(
+            scanned_text=part_text or "",
+            products=products,
+            image_path=tmp_path
+        )
+        return verdict
+
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass

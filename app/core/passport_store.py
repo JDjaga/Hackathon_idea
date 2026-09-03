@@ -94,10 +94,10 @@ class PassportStore:
                     except Exception:
                         pass
 
-    def add_passport(self, passport_data: Dict[str, Any], source: str = "web_studio") -> Dict[str, Any]:
+    def add_passport(self, passport_data: Dict[str, Any], source: str = "web_studio", auto_link: bool = True) -> Dict[str, Any]:
         """
-        Normalize and insert a new passport into the database.
-        Automatically executes identity verification against existing passports.
+        Normalize and insert a new passport into the database, or automatically link
+        the document to an existing product in the Household Product Graph if verified.
         """
         with self._lock:
             self._sync()
@@ -117,10 +117,59 @@ class PassportStore:
             match_result = match_passport(norm_data, self.passports)
             norm_data["identity_match"] = match_result
 
+            # Document Auto-Linking: If verified match with existing product, link document into existing entity
+            if auto_link and match_result.get("status") == "verified" and match_result.get("matched_passport_id"):
+                matched_id = match_result["matched_passport_id"]
+                existing_p = self.get_by_id(matched_id)
+                if existing_p:
+                    # Append to linked_documents
+                    doc_entry = {
+                        "type": norm_data.get("document_type") or "document",
+                        "source": source,
+                        "extracted_at": datetime.now().isoformat(),
+                        "snippet": f"Auto-linked from {source}: {norm_data.get('product', '')} {norm_data.get('model', '')}",
+                        "document_id": norm_data.get("passport_id")
+                    }
+                    if "linked_documents" not in existing_p:
+                        existing_p["linked_documents"] = []
+                    existing_p["linked_documents"].append(doc_entry)
+
+                    # Merge missing fields from the new document into the existing product
+                    for field in ["purchase_price", "currency", "seller", "customer_name",
+                                  "invoice_number", "order_id", "warranty", "purchase_date",
+                                  "category", "room"]:
+                        if not existing_p.get(field) and norm_data.get(field):
+                            existing_p[field] = norm_data[field]
+
+                    # Record lifecycle event
+                    if "events" not in existing_p:
+                        existing_p["events"] = []
+                    existing_p["events"].append({
+                        "type": "document_linked",
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "description": f"Linked {doc_entry['type'].replace('_', ' ').title()} document ({source})"
+                    })
+
+                    # Re-normalize existing passport to update computed expiry and health
+                    updated_existing = normalize_passport(existing_p)
+                    existing_p.clear()
+                    existing_p.update(updated_existing)
+
+                    self.save()
+
+                    return {
+                        "action": "linked",
+                        "passport": existing_p,
+                        "identity_match": match_result,
+                        "linked_to_id": matched_id,
+                        "message": f"Document automatically linked to existing household product: {existing_p.get('brand')} {existing_p.get('product')}"
+                    }
+
             self.passports.append(norm_data)
             self.save()
 
             return {
+                "action": "created",
                 "passport": norm_data,
                 "identity_match": match_result
             }

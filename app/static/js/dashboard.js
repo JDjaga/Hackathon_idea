@@ -9,10 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
   initAskMyHouse();
   loadSampleAssets();
   initDocumentStudio();
+  initCompatibilityScanner();
   initConflictRadar();
   initApplianceVision();
   initPassportVault();
+  initServicePassModal();
   initOfflineDetector();
+  fetchVaultPassports(); // Pre-cache registered appliances for Point-and-Ask
 });
 
 // Global State Store
@@ -21,7 +24,9 @@ const state = {
   currentDppSamplePath: null,
   currentYoloFile: null,
   currentYoloSamplePath: null,
+  currentCompatFile: null,
   activePassportData: null,
+  vaultPassports: [],
   samples: {},
   recognition: null
 };
@@ -72,7 +77,7 @@ async function fetchHouseholdHealth() {
 
     // Metrics Bar
     document.getElementById('stat-total').textContent = data.total_products || 0;
-    document.getElementById('stat-attention').textContent = data.needs_attention + data.upcoming_issues || 0;
+    document.getElementById('stat-attention').textContent = (data.needs_attention || 0) + (data.upcoming_issues || 0);
     document.getElementById('stat-rooms').textContent = data.room_count || 0;
     
     // Overview Cards
@@ -130,8 +135,11 @@ async function renderAttentionItems() {
           <button class="btn btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="downloadClaimPack('${item.passport_id}')">
             <span>🛡️</span> Claim Pack
           </button>
+          <button class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="openServicePassModal('${item.passport_id}')">
+            <span>⚡</span> Service Pass
+          </button>
           <button class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="viewPassportModal('${item.passport_id}')">
-            View Product
+            View Details
           </button>
         </div>
       `;
@@ -565,8 +573,15 @@ async function executeDppExtraction() {
       state.activePassportData = passport;
 
       renderCertificate(passport, match, data.raw_ocr_snippet);
-      showToast(`Digital Product Passport created: ${passport.product || 'Product'}`);
+      
+      if (stored.action === 'linked') {
+        showToast(`🔗 Auto-linked to existing product: ${passport.brand} ${passport.product}`);
+      } else {
+        showToast(`Digital Product Passport created: ${passport.product || 'Product'}`);
+      }
+      
       fetchHouseholdHealth();
+      fetchVaultPassports();
     }
 
   } catch (err) {
@@ -606,7 +621,7 @@ function renderCertificate(p, match, ocrSnippet) {
   banner.className = 'cert-verification-banner ' + status;
 
   if (status === 'verified') {
-    title.textContent = 'Identity Verified';
+    title.textContent = 'Identity Verified & Linked';
     desc.textContent = `Matched canonical product (${match.matched_passport_id}) with high confidence.`;
   } else if (status === 'conflict') {
     title.textContent = 'Identity Conflict Flagged';
@@ -622,7 +637,199 @@ function renderCertificate(p, match, ocrSnippet) {
 }
 
 /* ============================================================
-   6. IDENTITY MATCHER & CONFLICT RADAR
+   6. CONSUMABLES & COMPATIBILITY SCANNER (WOW Feature)
+   ============================================================ */
+function initCompatibilityScanner() {
+  const dropzone = document.getElementById('compat-dropzone');
+  const fileInput = document.getElementById('compat-file-input');
+  const btnRun = document.getElementById('btn-run-compatibility');
+  const btnClear = document.getElementById('btn-clear-compat');
+  const btnRemovePreview = document.getElementById('btn-compat-remove-preview');
+
+  if (dropzone) {
+    dropzone.addEventListener('click', (e) => {
+      if (e.target !== btnRemovePreview) fileInput.click();
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        handleCompatFileUpload(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length) {
+        handleCompatFileUpload(e.target.files[0]);
+      }
+    });
+  }
+
+  if (btnRemovePreview) {
+    btnRemovePreview.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearCompatInput();
+    });
+  }
+
+  if (btnClear) btnClear.addEventListener('click', clearCompatInput);
+  if (btnRun) btnRun.addEventListener('click', executeCompatibilityScan);
+}
+
+function handleCompatFileUpload(file) {
+  state.currentCompatFile = file;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const previewWrapper = document.getElementById('compat-preview-wrapper');
+    const previewImg = document.getElementById('compat-image-preview');
+    const dropzoneContent = document.querySelector('#compat-dropzone .dropzone-content');
+
+    previewImg.src = e.target.result;
+    previewWrapper.classList.remove('hidden');
+    dropzoneContent.classList.add('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearCompatInput() {
+  state.currentCompatFile = null;
+  const fileInput = document.getElementById('compat-file-input');
+  const textInput = document.getElementById('compat-text-input');
+  const previewWrapper = document.getElementById('compat-preview-wrapper');
+  const dropzoneContent = document.querySelector('#compat-dropzone .dropzone-content');
+
+  if (fileInput) fileInput.value = '';
+  if (textInput) textInput.value = '';
+  if (previewWrapper) previewWrapper.classList.add('hidden');
+  if (dropzoneContent) dropzoneContent.classList.remove('hidden');
+
+  document.querySelectorAll('#compat-sample-chips .sample-chip').forEach(c => c.classList.remove('active'));
+}
+
+window.testCompatPart = function(partText) {
+  switchToTab('tab-compatibility');
+  const input = document.getElementById('compat-text-input');
+  if (input) input.value = partText;
+  executeCompatibilityScan();
+};
+
+async function executeCompatibilityScan() {
+  const loading = document.getElementById('compat-loading-state');
+  const emptyState = document.getElementById('compat-empty-state');
+  const verdictResult = document.getElementById('compat-verdict-result');
+  const badge = document.getElementById('compat-status-badge');
+  const textInput = document.getElementById('compat-text-input');
+
+  loading.classList.remove('hidden');
+  emptyState.classList.add('hidden');
+  verdictResult.classList.add('hidden');
+  badge.textContent = 'Evaluating...';
+
+  try {
+    const formData = new FormData();
+    if (state.currentCompatFile) {
+      formData.append('file', state.currentCompatFile);
+    }
+    const partText = textInput ? textInput.value.trim() : '';
+    if (partText) {
+      formData.append('part_text', partText);
+    }
+
+    const res = await fetch('/api/household/compatibility/scan', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) throw new Error('Compatibility analysis failed');
+    const data = await res.json();
+
+    loading.classList.add('hidden');
+    verdictResult.classList.remove('hidden');
+    badge.textContent = data.status.replace('_', ' ').toUpperCase();
+
+    renderCompatibilityVerdict(data);
+    showToast(`Compatibility verdict: ${data.status.replace('_', ' ').toUpperCase()}`);
+
+  } catch (err) {
+    loading.classList.add('hidden');
+    emptyState.classList.remove('hidden');
+    badge.textContent = 'Error';
+    showToast(`Compatibility error: ${err.message}`);
+  }
+}
+
+function renderCompatibilityVerdict(data) {
+  const container = document.getElementById('compat-verdict-result');
+  if (!container) return;
+
+  const confPercent = Math.round((data.confidence || 0) * 100);
+  let statusClass = 'healthy';
+  let badgeTitle = 'VERIFIED COMPATIBLE';
+  let badgeIcon = '✅';
+
+  if (data.status === 'likely_compatible') {
+    statusClass = 'attention';
+    badgeTitle = 'LIKELY COMPATIBLE';
+    badgeIcon = '⚠️';
+  } else if (!data.compatible) {
+    statusClass = 'urgent';
+    badgeTitle = 'CANNOT VERIFY';
+    badgeIcon = '❌';
+  }
+
+  let matchedHtml = '';
+  if (data.matched_product) {
+    const mp = data.matched_product;
+    matchedHtml = `
+      <div class="matched-appliance-card">
+        <h4 style="color:var(--gold-light); margin-bottom:0.35rem;">🏠 Matched Household Appliance:</h4>
+        <p><strong>${mp.brand} ${mp.product}</strong> (Room: <strong>${mp.room}</strong>)</p>
+        <p class="font-mono text-muted" style="font-size:0.85rem;">Registered Model: ${mp.model || 'N/A'}</p>
+        <button class="btn btn-secondary" style="margin-top:0.65rem; padding:0.3rem 0.75rem; font-size:0.8rem;" onclick="viewPassportModal('${mp.passport_id}')">
+          View Appliance Passport
+        </button>
+      </div>
+    `;
+  }
+
+  let dupHtml = '';
+  if (data.duplicate_warning) {
+    dupHtml = `<div class="alert-box" style="margin-top:0.75rem; color:var(--gold-light);"><span class="alert-icon">⚠️</span> ${data.duplicate_warning}</div>`;
+  }
+
+  container.innerHTML = `
+    <div class="certificate-card" style="margin:0;">
+      <div class="cert-verification-banner ${data.compatible ? 'verified' : 'conflict'}" style="margin-bottom:1.25rem;">
+        <div class="banner-icon">${badgeIcon}</div>
+        <div>
+          <span class="banner-title">${badgeTitle} (${confPercent}% Confidence)</span>
+          <span class="banner-desc">${data.recommendation}</span>
+        </div>
+      </div>
+
+      <div style="background:rgba(15, 23, 42, 0.7); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1.25rem; margin-bottom:1rem;">
+        <h4 style="color:var(--text-secondary); margin-bottom:0.5rem; font-size:0.9rem;">🔎 Evidence & Logic:</h4>
+        <p style="font-size:0.925rem; color:var(--text-primary); line-height:1.5;">${data.evidence}</p>
+      </div>
+
+      ${matchedHtml}
+      ${dupHtml}
+    </div>
+  `;
+}
+
+/* ============================================================
+   7. IDENTITY MATCHER & CONFLICT RADAR
    ============================================================ */
 function initConflictRadar() {
   const btnRun = document.getElementById('btn-run-match');
@@ -717,7 +924,7 @@ function renderRadarResults(data) {
 }
 
 /* ============================================================
-   7. APPLIANCE OBJECT VISION (YOLO)
+   8. APPLIANCE OBJECT VISION (YOLO) + POINT-AND-ASK
    ============================================================ */
 function initApplianceVision() {
   const dropzone = document.getElementById('yolo-dropzone');
@@ -859,12 +1066,42 @@ function renderDetectionCards(detections) {
   detections.forEach((d, idx) => {
     const card = document.createElement('div');
     card.className = 'detection-card';
+
+    // Point-and-Ask Matching: cross-reference detected label with registered household appliances
+    const labelLower = d.label.toLowerCase();
+    const matchedProduct = state.vaultPassports.find(p => {
+      const pName = (p.product || '').toLowerCase();
+      return pName.includes(labelLower) || (labelLower === 'washer' && pName.includes('washing'));
+    });
+
+    let pointAskHtml = '';
+    if (matchedProduct) {
+      pointAskHtml = `
+        <div class="point-ask-box" style="margin-top:0.75rem; padding:0.75rem; background:rgba(245, 158, 11, 0.1); border:1px solid var(--border-color); border-radius:var(--radius-sm);">
+          <span style="font-size:0.8rem; font-weight:700; color:var(--gold-light);">📷 RECOGNIZED HOUSEHOLD PRODUCT:</span>
+          <p style="font-size:0.9rem; font-weight:600; margin:0.25rem 0;">${matchedProduct.brand} ${matchedProduct.product} (${matchedProduct.room})</p>
+          <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.5rem;">
+            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="askPreset('When does my ${matchedProduct.product} warranty expire?')">
+              💬 Warranty Expiry?
+            </button>
+            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="askPreset('When was my ${matchedProduct.product} last serviced?')">
+              💬 Service History?
+            </button>
+            <button class="sample-chip" style="font-size:0.75rem; padding:0.25rem 0.5rem;" onclick="openServicePassModal('${matchedProduct.passport_id}')">
+              ⚡ Service Pass (QR)
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
     card.innerHTML = `
       <div class="detection-header">
         <span class="detection-class">#${idx + 1} ${d.label}</span>
         <span class="detection-conf">${intConf(d.confidence)}% Confidence</span>
       </div>
       <div class="detection-box font-mono">BBox: [${d.box.map(n => Math.round(n)).join(', ')}]</div>
+      ${pointAskHtml}
     `;
     container.appendChild(card);
   });
@@ -875,7 +1112,7 @@ function intConf(val) {
 }
 
 /* ============================================================
-   8. PRODUCT REGISTRY (PASSPORT VAULT)
+   9. PRODUCT REGISTRY (PASSPORT VAULT)
    ============================================================ */
 function initPassportVault() {
   const searchInput = document.getElementById('vault-search-input');
@@ -911,6 +1148,9 @@ async function fetchVaultPassports() {
     const res = await fetch(`/api/dpp/passports?${params.toString()}`);
     const data = await res.json();
     let passports = data.passports || [];
+
+    // Cache passports globally for Point-and-Ask and other views
+    state.vaultPassports = passports;
 
     // Filter by room if selected
     if (room) {
@@ -954,6 +1194,7 @@ function renderVaultTable(passports) {
       <td>${statusBadge}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="viewPassportModal('${p.passport_id}')">View</button>
+        <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; margin-left:4px; color:var(--gold-light); border-color:var(--border-color);" onclick="openServicePassModal('${p.passport_id}')">⚡ Service Pass</button>
         <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; margin-left:4px;" onclick="downloadClaimPack('${p.passport_id}')">Claim Pack</button>
         <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.75rem; color:var(--crimson-primary); border-color:var(--crimson-border); margin-left:4px;" onclick="deletePassport('${p.passport_id}')">Delete</button>
       </td>
@@ -1044,7 +1285,10 @@ window.viewPassportModal = async function(passportId) {
         </div>
         ${docsHtml}
         <div class="cert-actions" style="margin-top:1.5rem;">
-          <button class="btn btn-primary" onclick="downloadClaimPack('${p.passport_id}')">
+          <button class="btn btn-primary" onclick="openServicePassModal('${p.passport_id}')">
+            <span>⚡</span> Open Service Pass (QR)
+          </button>
+          <button class="btn btn-secondary" onclick="downloadClaimPack('${p.passport_id}')">
             <span>🛡️</span> Download Claim Pack
           </button>
           <button class="btn btn-secondary" onclick="downloadSinglePassportJson(state.activePassportData || ${JSON.stringify(p).replace(/"/g, '&quot;')})">
@@ -1060,6 +1304,72 @@ window.viewPassportModal = async function(passportId) {
   }
 };
 
+/* ============================================================
+   10. TECHNICIAN SERVICE MODE MODAL
+   ============================================================ */
+function initServicePassModal() {
+  const modal = document.getElementById('service-pass-modal');
+  const btnClose = document.getElementById('btn-close-service-modal');
+
+  if (btnClose) {
+    btnClose.addEventListener('click', () => modal.classList.add('hidden'));
+  }
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.add('hidden');
+    });
+  }
+}
+
+window.openServicePassModal = async function(passportId) {
+  try {
+    const res = await fetch(`/api/household/service-pass/${passportId}`);
+    if (!res.ok) throw new Error('Service briefing could not be generated');
+    const data = await res.json();
+
+    document.getElementById('sp-product-title').textContent = `${data.brand} ${data.product}`;
+    document.getElementById('sp-room-location').textContent = `${data.room} • Model: ${data.model || 'N/A'}`;
+    document.getElementById('sp-serial').textContent = data.serial_number || 'N/A';
+    document.getElementById('sp-warranty').textContent = `${data.warranty || 'Standard'} (Expires: ${data.warranty_expiry_date || 'N/A'})`;
+    document.getElementById('sp-purchase-date').textContent = data.purchase_date || 'N/A';
+    document.getElementById('sp-invoice').textContent = data.invoice_number || 'N/A';
+    document.getElementById('sp-seller').textContent = data.seller || 'N/A';
+
+    // Set real QR code image
+    const qrImg = document.getElementById('sp-qr-image');
+    if (qrImg) {
+      qrImg.src = data.qr_image_data_url;
+    }
+
+    // Render Service History stream
+    const historyList = document.getElementById('sp-history-list');
+    if (historyList) {
+      historyList.innerHTML = '';
+      const history = data.service_history || [];
+      if (!history.length) {
+        historyList.innerHTML = '<p class="text-muted" style="font-size:0.85rem;">No prior maintenance or repairs recorded.</p>';
+      } else {
+        history.forEach(ev => {
+          const item = document.createElement('div');
+          item.className = 'sp-history-item';
+          item.innerHTML = `
+            <span class="sp-history-date font-mono">${ev.date || '—'}</span>
+            <span class="sp-history-type">${(ev.type || 'Event').toUpperCase()}</span>
+            <span class="sp-history-desc">${ev.description || ''}</span>
+          `;
+          historyList.appendChild(item);
+        });
+      }
+    }
+
+    document.getElementById('service-pass-modal').classList.remove('hidden');
+    showToast(`⚡ Technician Service Pass generated for ${data.brand} ${data.product}`);
+
+  } catch (err) {
+    showToast(`Service pass error: ${err.message}`);
+  }
+};
+
 function downloadSinglePassportJson(p) {
   const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1072,7 +1382,7 @@ function downloadSinglePassportJson(p) {
 }
 
 /* ============================================================
-   9. OFFLINE DETECTOR & TOAST UTILITIES
+   11. OFFLINE DETECTOR & TOAST UTILITIES
    ============================================================ */
 function initOfflineDetector() {
   const banner = document.getElementById('offline-banner');

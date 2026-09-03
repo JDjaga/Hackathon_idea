@@ -114,6 +114,59 @@ class TestHouseholdIntelligence(unittest.TestCase):
         self.assertIn("rooms", data)
         self.assertIn("Kitchen", data["rooms"])
 
+    def test_compatibility_engine(self):
+        from app.core.compatibility_engine import evaluate_compatibility
+        # Positive Match
+        verdict = evaluate_compatibility("Daikin Wireless Remote Controller FTKF", [self.sample_product])
+        self.assertTrue(verdict["compatible"])
+        self.assertGreater(verdict["confidence"], 0.60)
+        self.assertEqual(verdict["matched_product"]["brand"], "Daikin")
+
+        # Negative Match
+        verdict_neg = evaluate_compatibility("Universal Microwave Turntable Ring 24cm", [self.sample_product])
+        self.assertFalse(verdict_neg["compatible"])
+
+    def test_api_compatibility_scan(self):
+        res = self.client.post("/api/household/compatibility/scan", data={"part_text": "Daikin Split AC Remote FTKF"})
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("compatible", data)
+        self.assertIn("recommendation", data)
+
+    def test_api_service_pass(self):
+        # Fetch an existing passport ID
+        passports = self.client.get("/api/dpp/passports").json()["passports"]
+        self.assertGreater(len(passports), 0)
+        pid = passports[0]["passport_id"]
+
+        res = self.client.get(f"/api/household/service-pass/{pid}")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["passport_id"], pid)
+        self.assertIn("qr_image_data_url", data)
+        self.assertTrue(data["qr_image_data_url"].startswith("data:image/png;base64,"))
+
+    def test_document_auto_linking(self):
+        from app.core.passport_store import get_passport_store
+        store = get_passport_store()
+        all_p = store.get_all()
+        target = all_p[0]
+
+        # Ingest a matching document with identical serial number
+        new_doc = {
+            "document_type": "service_receipt",
+            "product": target.get("product"),
+            "brand": target.get("brand"),
+            "model": target.get("model"),
+            "serial_number": target.get("serial_number"),
+            "purchase_price": target.get("purchase_price"),
+            "seller": "Authorized Service Center"
+        }
+        res = store.add_passport(new_doc, source="camera_test", auto_link=True)
+        self.assertEqual(res["action"], "linked")
+        self.assertEqual(res["linked_to_id"], target["passport_id"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

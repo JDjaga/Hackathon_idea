@@ -99,6 +99,9 @@
       <button class="nav-tab" data-tab="tab-document-studio">
         <span class="tab-icon">📷</span> Smart Capture
       </button>
+      <button class="nav-tab" data-tab="tab-compatibility">
+        <span class="tab-icon">🔍</span> Compatibility Scanner
+      </button>
       <button class="nav-tab" data-tab="tab-conflict-radar">
         <span class="tab-icon">⚡</span> Identity Matcher
       </button>
@@ -386,10 +389,85 @@
             </div>
           </div>
         </div>
+    </section>
+
+    <!-- Tab 4: Compatibility Scanner (Consumables, Filters, Parts) -->
+    <section class="tab-content" id="tab-compatibility">
+      <div class="workspace-grid">
+        <!-- Left: Scanner Input -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="title-gold">🔍</span> Consumables & Parts Scanner</h2>
+            <span class="card-badge">Compatibility Engine</span>
+          </div>
+          <p class="card-subtitle">Scan or photograph any replacement part, filter, remote, or battery to verify if it fits your household appliances.</p>
+
+          <!-- 1-Click Test Parts Chips -->
+          <div class="samples-selector-wrapper">
+            <label class="section-label">1-Click Test Consumables / Parts:</label>
+            <div class="sample-chips-container" id="compat-sample-chips">
+              <button class="sample-chip" onclick="testCompatPart('Philips NanoProtect HEPA Filter Series 3000 FY3430/30')">Philips HEPA Filter (AC3059)</button>
+              <button class="sample-chip" onclick="testCompatPart('LG Washing Machine Water Inlet Solenoid Valve T75-SKSF1Z')">LG Washer Inlet Valve (T75)</button>
+              <button class="sample-chip" onclick="testCompatPart('Daikin Inverter Split AC Wireless Remote Controller FTKF')">Daikin AC Remote (FTKF35)</button>
+              <button class="sample-chip" onclick="testCompatPart('Samsung EcoBubble Drive Motor Belt 1270 J5')">Samsung Motor Belt (Unregistered)</button>
+            </div>
+          </div>
+
+          <!-- Part Upload Dropzone -->
+          <div class="dropzone" id="compat-dropzone">
+            <div class="dropzone-content">
+              <div class="drop-icon">📦</div>
+              <h3>Scan or Upload Part Packaging</h3>
+              <p>Drag & drop photo of part label, SKU, or replacement packaging</p>
+              <button class="btn btn-secondary">Browse File</button>
+            </div>
+            <input type="file" id="compat-file-input" accept="image/*" class="hidden">
+
+            <div id="compat-preview-wrapper" class="preview-wrapper hidden">
+              <img id="compat-image-preview" src="" alt="Part Preview">
+              <button class="btn-remove-preview" id="btn-compat-remove-preview">×</button>
+            </div>
+          </div>
+
+          <!-- Manual Part Text Input -->
+          <div class="form-group" style="margin-top: 1rem;">
+            <label class="section-label">Or Enter Part Description / Model SKU:</label>
+            <input type="text" id="compat-text-input" class="form-input" placeholder="e.g. Philips FY3430 Filter or LG Washer Valve...">
+          </div>
+
+          <div class="card-actions">
+            <button class="btn btn-primary btn-block" id="btn-run-compatibility">
+              <span>🔍</span> Evaluate Household Compatibility
+            </button>
+            <button class="btn btn-secondary" id="btn-clear-compat">Reset</button>
+          </div>
+        </div>
+
+        <!-- Right: Compatibility Verdict Card -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="title-gold">📊</span> Compatibility Verdict</h2>
+            <span class="card-badge" id="compat-status-badge">Standby</span>
+          </div>
+
+          <div id="compat-loading-state" class="loading-state hidden">
+            <div class="spinner"></div>
+            <p>Matching part against Household Product Graph...</p>
+          </div>
+
+          <div id="compat-empty-state" class="empty-state">
+            <span class="empty-icon">🔍</span>
+            <p>Scan a replacement part or choose a test sample to evaluate compatibility with your appliances.</p>
+          </div>
+
+          <div id="compat-verdict-result" class="certificate-wrapper hidden">
+            <!-- JS Injected Verdict Card -->
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Tab 4: Identity Matcher & Conflict Radar -->
+    <!-- Tab 5: Identity Matcher & Conflict Radar -->
     <section class="tab-content" id="tab-conflict-radar">
       <div class="workspace-grid">
         <!-- Compare Inputs -->
@@ -626,6 +704,69 @@
       <button class="modal-close" id="btn-close-modal">×</button>
       <div id="modal-certificate-target">
         <!-- JS Injected Certificate -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Technician Service Pass Modal with Real Scannable QR Code -->
+  <div id="service-pass-modal" class="modal-backdrop hidden">
+    <div class="modal-card service-modal-card">
+      <button class="modal-close" id="btn-close-service-modal">×</button>
+      <div class="service-pass-container">
+        <div class="service-pass-header">
+          <span class="service-badge">⚡ TECHNICIAN SERVICE BRIEFING</span>
+          <h2 id="sp-product-title">LG Washing Machine</h2>
+          <p class="text-muted" id="sp-room-location">Utility • Model: T75-SKSF1Z</p>
+        </div>
+
+        <div class="service-pass-body-grid">
+          <!-- Left: Scannable QR Code -->
+          <div class="service-qr-wrapper">
+            <img id="sp-qr-image" src="" alt="Service Pass QR Code" class="service-qr-code">
+            <span class="qr-caption">Scan with technician device for instant maintenance log access</span>
+          </div>
+
+          <!-- Right: Key Specs & Health -->
+          <div class="service-specs-box">
+            <div class="spec-row">
+              <span class="spec-label">Serial Number:</span>
+              <span class="spec-val font-mono gold-highlight" id="sp-serial">—</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Warranty Status:</span>
+              <span class="spec-val" id="sp-warranty">—</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Purchase Date:</span>
+              <span class="spec-val font-mono" id="sp-purchase-date">—</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Invoice Number:</span>
+              <span class="spec-val font-mono" id="sp-invoice">—</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Authorized Seller:</span>
+              <span class="spec-val" id="sp-seller">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Service History Timeline inside Service Pass -->
+        <div class="service-pass-history">
+          <h4 style="margin-bottom:0.65rem; color:var(--gold-light);">📋 Recorded Maintenance & Service History</h4>
+          <div id="sp-history-list" class="sp-history-stream">
+            <!-- JS Injected events -->
+          </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top:1.25rem; display:flex; gap:0.75rem; justify-content:flex-end;">
+          <button class="btn btn-primary" onclick="window.print()">
+            <span>🖨️</span> Print Service Pass
+          </button>
+          <button class="btn btn-secondary" onclick="document.getElementById('service-pass-modal').classList.add('hidden')">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   </div>
