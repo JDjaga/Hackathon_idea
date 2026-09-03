@@ -456,7 +456,7 @@ function renderSampleChips(targetId, items, onClickHandler) {
   items.forEach(item => {
     const chip = document.createElement('button');
     chip.className = 'sample-chip';
-    chip.innerHTML = `<span class="chip-icon">📄</span> ${item.name}`;
+    chip.innerHTML = `<span class="chip-icon">📄</span> ${item.title || item.name || 'Sample'}`;
     chip.addEventListener('click', (e) => {
       e.preventDefault();
       document.querySelectorAll(`#${targetId} .sample-chip`).forEach(c => c.classList.remove('active'));
